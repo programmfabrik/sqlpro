@@ -67,25 +67,28 @@ func TestMain(m *testing.M) {
 func TestNoPointer(t *testing.T) {
 	row := testRow{}
 
-	err := db.SelectRow(row, "SELECT * FROM test LIMIT 1")
+	err := db.Select(row, "SELECT * FROM test LIMIT 1")
 	if err == nil {
 		t.Errorf("Expected error for passing struct instead of ptr.")
 	}
 }
 
 func TestNoStruct(t *testing.T) {
-	row := 4
+	var i int64
 
-	err := db.SelectRow(&row, "SELECT * FROM test LIMIT 1")
-	if err == nil {
-		t.Errorf("Expected error for passing non struct ptr.")
+	err := db.Select(&i, "SELECT * FROM test ORDER BY a LIMIT 1")
+	if err != nil {
+		t.Error(err)
+	}
+	if i != 1 {
+		t.Errorf("Expected i == 1.")
 	}
 }
 
-func TestSelectRow(t *testing.T) {
+func TestSelect(t *testing.T) {
 
 	row := testRow{}
-	err := db.SelectRow(&row, "SELECT a, b, c, d FROM test ORDER BY a LIMIT 1 OFFSET 1")
+	err := db.Select(&row, "SELECT a, b, c, d FROM test ORDER BY a LIMIT 1 OFFSET 1")
 
 	if err != nil {
 		t.Error(err)
@@ -97,10 +100,10 @@ func TestSelectRow(t *testing.T) {
 
 }
 
-func TestSelectRowReal(t *testing.T) {
+func TestSelectReal(t *testing.T) {
 
 	row := testRow{}
-	err := db.SelectRow(&row, "SELECT a, b, c, d FROM test ORDER BY a LIMIT 1 OFFSET 1")
+	err := db.Select(&row, "SELECT a, b, c, d FROM test ORDER BY a LIMIT 1 OFFSET 1")
 
 	if err != nil {
 		t.Error(err)
@@ -133,14 +136,15 @@ func TestSelectOneRowStd(t *testing.T) {
 
 }
 
-func TestSelectRowPtr(t *testing.T) {
+func TestSelectPtr(t *testing.T) {
 
 	row := testRow{}
 
+	// this needs to be set <nil> by sqlpro
 	s := "henk"
 	row.C_P = &s
 
-	err := db.SelectRow(&row, "SELECT a AS a_p, b AS b_p, c AS c_p, d AS d_p FROM test LIMIT 1")
+	err := db.Select(&row, "SELECT a AS a_p, b AS b_p, c AS c_p, d AS d_p FROM test ORDER BY a LIMIT 1")
 
 	if err != nil {
 		t.Error(err)
@@ -158,4 +162,60 @@ func TestSelectRowPtr(t *testing.T) {
 		t.Errorf("row.C_P != nil")
 	}
 
+	if row.D_P != nil {
+		t.Errorf("row.D_P != nil")
+	}
+
+}
+
+func TestSelectAll(t *testing.T) {
+	rows := make([]testRow, 0)
+	err := db.Select(&rows, "SELECT * FROM test")
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestSelectAllPtr(t *testing.T) {
+	rows := make([]*testRow, 0)
+	err := db.Select(&rows, "SELECT * FROM test")
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestSelectAllInt64(t *testing.T) {
+	rows := make([]int64, 0)
+	err := db.Select(&rows, "SELECT a FROM test")
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestSelectAllInt64Ptr(t *testing.T) {
+	rows := make([]*int64, 0)
+	err := db.Select(&rows, "SELECT a FROM test")
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestSelectAllIntPtr(t *testing.T) {
+	rows := make([]*int, 0)
+	err := db.Select(&rows, "SELECT a FROM test")
+	if err != nil {
+		t.Error(err)
+	}
+	// litter.Dump(rows)
+}
+func TestSelectAllFloat64Ptr(t *testing.T) {
+	rows := make([]*float64, 0)
+	err := db.Select(&rows, "SELECT d FROM test ORDER BY a")
+	if err != nil {
+		t.Error(err)
+	}
+	if rows[0] != nil {
+		t.Errorf("First d needs to be <nil>.")
+	}
+	// litter.Dump(rows)
 }

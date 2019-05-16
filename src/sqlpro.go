@@ -56,30 +56,14 @@ func fieldMap(t reflect.Type) map[string]fieldInfo {
 	return m
 }
 
-// SelectOneRow runs query and fills the row.
-func (db *DB) SelectRow(row interface{}, query string, args ...interface{}) error {
+func (db *DB) scanRow(target reflect.Value, rows *sql.Rows) error {
 	var (
-		rows *sql.Rows
-		err  error
-		data []interface{} // data is used for scanning
-		cols []string      // columns for the query
-
+		err             error
+		cols            []string
+		data            []interface{}
+		targetV, fieldV reflect.Value
+		structFields    map[string]fieldInfo
 	)
-
-	v := reflect.ValueOf(row)
-	if v.Kind() != reflect.Ptr {
-		return fmt.Errorf("non-pointer %v", v.Type())
-	}
-
-	targetV := v.Elem()
-	if targetV.Kind() != reflect.Struct {
-		return fmt.Errorf("struct expected: %s", targetV.Kind())
-	}
-
-	rows, err = db.DB.Query(query, args...)
-	if err != nil {
-		return err
-	}
 
 	cols, err = rows.Columns()
 	if err != nil {
@@ -88,19 +72,63 @@ func (db *DB) SelectRow(row interface{}, query string, args ...interface{}) erro
 
 	data = make([]interface{}, len(cols))
 
-	fields := fieldMap(reflect.ValueOf(targetV.Interface()).Type())
+	if target.Kind() == reflect.Ptr {
+		if target.IsNil() {
+			// nil pointer
+			// if target.Type().Elem().Kind() == reflect.Struct {
+			target.Set(reflect.New(target.Type().Elem()))
+			// }
+		}
+		// log.Printf("Kind: %v", target.Elem().Kind())
+		if target.Elem().Kind() == reflect.Struct {
+			targetV = target.Elem()
+		} else {
+			targetV = target
+		}
+	} else {
+		targetV = target
+	}
+
+	switch targetV.Kind() {
+	case reflect.Struct:
+		structFields = fieldMap(reflect.ValueOf(targetV.Interface()).Type())
+	case reflect.Slice:
+		return fmt.Errorf("Slice target not supported.")
+	}
+
+	// if target.Kind() == reflect.Ptr {
+	// 	log.Printf("Target: %v %s %v %s", target.IsValid(), target.Type(), target.IsNil(), target.Type().Elem().Kind())
+	// }
+
 	nullValueByIdx := make(map[int]reflect.Value, 0)
 
 	for idx, col := range cols {
-		finfo, ok := fields[col]
-		if !ok {
+
+		skip := false
+
+		if structFields != nil {
+			finfo, ok := structFields[col]
+			if !ok {
+				skip = true
+			} else {
+				fieldV = targetV.FieldByName(finfo.name)
+			}
+		} else {
+			if idx == 0 {
+				// first column will be mapped
+				fieldV = targetV
+			} else {
+				skip = true
+			}
+		}
+
+		if skip {
 			// column not mapped in struct, we sill need to allocate
-			//
 			data[idx] = &voidScan{}
 			continue
 		}
 
-		fieldV := targetV.FieldByName(finfo.name)
+		// log.Printf("NIL?: %v %s %T", fieldV.IsValid(), fieldV.Type(), fieldV.Interface())
 
 		// Init Null Scanners for some Pointer Types
 		switch fieldV.Interface().(type) {
@@ -126,18 +154,15 @@ func (db *DB) SelectRow(row interface{}, query string, args ...interface{}) erro
 		}
 	}
 
-	defer rows.Close()
-	for rows.Next() {
-		err = rows.Scan(data...)
-		if err != nil {
-			return err
-		}
+	err = rows.Scan(data...)
+	if err != nil {
+		return err
 	}
 
 	// Read back data from Null scanners which we used above
 	for idx, fieldV := range nullValueByIdx {
 		switch fieldV.Interface().(type) {
-		case *string, *int64:
+		case *string, *int64, *float64:
 			switch v := data[idx].(type) {
 			case *sql.NullString:
 				if (*v).Valid {
@@ -168,6 +193,59 @@ func (db *DB) SelectRow(row interface{}, query string, args ...interface{}) erro
 				fieldV.SetFloat((*v).Float64)
 			}
 		}
+	}
+	return nil
+}
+
+// SelectOneRow runs query and fills the row.
+func (db *DB) Select(target interface{}, query string, args ...interface{}) error {
+	var (
+		rows        *sql.Rows
+		err         error
+		rowMode     bool
+		targetValue reflect.Value
+	)
+
+	v := reflect.ValueOf(target)
+	if v.Type().Kind() != reflect.Ptr {
+		return fmt.Errorf("non-pointer %v", v.Type())
+	}
+
+	targetValue = v.Elem()
+	if targetValue.Type().Kind() != reflect.Slice {
+		rowMode = true
+	}
+
+	// log.Printf("RowMode: %s %v", targetValue.Type().Kind(), rowMode)
+
+	rows, err = db.DB.Query(query, args...)
+	if err != nil {
+		return err
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		if rowMode {
+			err = db.scanRow(targetValue, rows)
+			if err != nil {
+				return err
+			}
+			// Only one row in row mode
+			return nil
+		}
+
+		// slice mode
+
+		// create an item suitable for appending to the slice
+		rowValues := reflect.MakeSlice(targetValue.Type(), 1, 1)
+		rowValue := rowValues.Index(0)
+
+		err = db.scanRow(rowValue, rows)
+		if err != nil {
+			return err
+		}
+
+		targetValue.Set(reflect.Append(targetValue, rowValue))
 	}
 
 	return nil

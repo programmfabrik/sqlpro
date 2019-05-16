@@ -1,6 +1,6 @@
-# go-sqlx
+# go-sqlpro
 
-## SelectRow
+## Select(target interface{}, query string, args...)
 
 
 
