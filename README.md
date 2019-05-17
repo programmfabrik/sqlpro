@@ -1,6 +1,6 @@
 # go-sqlpro
 
-## Select(target interface{}, query string, args...)
+## Query(target interface{}, query string, args...)
 
 
 

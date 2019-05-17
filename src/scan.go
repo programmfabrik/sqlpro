@@ -6,26 +6,6 @@ import (
 	"reflect"
 )
 
-type DB struct {
-	DB *sql.DB
-}
-
-// NewSqlPro returns a wrapped database handle providing
-// access to the sql pro functions.
-func NewSqlPro(dbWrap *sql.DB) *DB {
-	var (
-		db *DB
-	)
-	db = new(DB)
-	db.DB = dbWrap
-	return db
-}
-
-type fieldInfo struct {
-	structField reflect.StructField
-	name        string
-}
-
 type voidScan struct{}
 
 func (vs *voidScan) Scan(interface{}) error {
@@ -33,36 +13,14 @@ func (vs *voidScan) Scan(interface{}) error {
 	return nil
 }
 
-// fieldMap returns
-func fieldMap(t reflect.Type) map[string]fieldInfo {
-	m := make(map[string]fieldInfo, 0)
-
-	// log.Printf("name: %s %d", t, t.NumField())
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		if field.PkgPath != "" {
-			// unexported field
-			continue
-		}
-		dbName := field.Tag.Get("db")
-		if dbName == "-" {
-			continue
-		}
-		if dbName == "" {
-			dbName = field.Name
-		}
-		m[dbName] = fieldInfo{structField: field, name: field.Name}
-	}
-	return m
-}
-
-func (db *DB) scanRow(target reflect.Value, rows *sql.Rows) error {
+// scanRow scans one row into the given target
+func scanRow(target reflect.Value, rows *sql.Rows) error {
 	var (
 		err             error
 		cols            []string
 		data            []interface{}
 		targetV, fieldV reflect.Value
-		structFields    map[string]fieldInfo
+		info            structInfo
 	)
 
 	cols, err = rows.Columns()
@@ -91,7 +49,7 @@ func (db *DB) scanRow(target reflect.Value, rows *sql.Rows) error {
 
 	switch targetV.Kind() {
 	case reflect.Struct:
-		structFields = fieldMap(reflect.ValueOf(targetV.Interface()).Type())
+		info = getStructInfo(reflect.ValueOf(targetV.Interface()).Type())
 	case reflect.Slice:
 		return fmt.Errorf("Slice target not supported.")
 	}
@@ -106,8 +64,8 @@ func (db *DB) scanRow(target reflect.Value, rows *sql.Rows) error {
 
 		skip := false
 
-		if structFields != nil {
-			finfo, ok := structFields[col]
+		if info != nil {
+			finfo, ok := info[col]
 			if !ok {
 				skip = true
 			} else {
@@ -197,13 +155,22 @@ func (db *DB) scanRow(target reflect.Value, rows *sql.Rows) error {
 	return nil
 }
 
-// SelectOneRow runs query and fills the row.
-func (db *DB) Select(target interface{}, query string, args ...interface{}) error {
+// Scan reads data from the given rows into the target.
+//
+// *int64, *string, etc: First column of first row
+// *struct: First row
+// []int64, []*int64, []string, []*string: First column, all rows
+// []struct, []*struct: All columns, all rows
+//
+// The mapping into structs is done by analyzing the struct's tag names
+// and using the given "db" key for the mapping. The mapping works on
+// exported fields only. Use "-" as mapping name to ignore the field.
+//
+func Scan(target interface{}, rows *sql.Rows) error {
 	var (
-		rows        *sql.Rows
-		err         error
-		rowMode     bool
 		targetValue reflect.Value
+		rowMode     bool
+		err         error
 	)
 
 	v := reflect.ValueOf(target)
@@ -216,17 +183,10 @@ func (db *DB) Select(target interface{}, query string, args ...interface{}) erro
 		rowMode = true
 	}
 
-	// log.Printf("RowMode: %s %v", targetValue.Type().Kind(), rowMode)
-
-	rows, err = db.DB.Query(query, args...)
-	if err != nil {
-		return err
-	}
-
 	defer rows.Close()
 	for rows.Next() {
 		if rowMode {
-			err = db.scanRow(targetValue, rows)
+			err = scanRow(targetValue, rows)
 			if err != nil {
 				return err
 			}
@@ -240,7 +200,7 @@ func (db *DB) Select(target interface{}, query string, args ...interface{}) erro
 		rowValues := reflect.MakeSlice(targetValue.Type(), 1, 1)
 		rowValue := rowValues.Index(0)
 
-		err = db.scanRow(rowValue, rows)
+		err = scanRow(rowValue, rows)
 		if err != nil {
 			return err
 		}
@@ -249,4 +209,5 @@ func (db *DB) Select(target interface{}, query string, args ...interface{}) erro
 	}
 
 	return nil
+
 }
