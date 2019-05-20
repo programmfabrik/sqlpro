@@ -21,6 +21,8 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 		data            []interface{}
 		targetV, fieldV reflect.Value
 		info            structInfo
+		isSlice         bool
+		isStruct        bool
 	)
 
 	cols, err = rows.Columns()
@@ -50,8 +52,27 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 	switch targetV.Kind() {
 	case reflect.Struct:
 		info = getStructInfo(reflect.ValueOf(targetV.Interface()).Type())
+		isStruct = true
 	case reflect.Slice:
-		return fmt.Errorf("Slice target not supported.")
+		isSlice = true
+
+		var isPointer bool
+
+		if targetV.Type().Elem().Kind() == reflect.Ptr {
+			isPointer = true
+		}
+
+		// append placeholders to the slice
+		for range cols {
+			var newEl reflect.Value
+			if isPointer {
+				newEl = reflect.New(targetV.Type().Elem().Elem())
+			} else {
+				newEl = reflect.Indirect(reflect.New(targetV.Type().Elem()))
+			}
+			targetV.Set(reflect.Append(targetV, newEl))
+		}
+
 	}
 
 	// if target.Kind() == reflect.Ptr {
@@ -64,13 +85,15 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 
 		skip := false
 
-		if info != nil {
+		if isStruct {
 			finfo, ok := info[col]
 			if !ok {
 				skip = true
 			} else {
 				fieldV = targetV.FieldByName(finfo.name)
 			}
+		} else if isSlice {
+			fieldV = targetV.Index(idx)
 		} else {
 			if idx == 0 {
 				// first column will be mapped
@@ -183,7 +206,6 @@ func Scan(target interface{}, rows *sql.Rows) error {
 		rowMode = true
 	}
 
-	defer rows.Close()
 	for rows.Next() {
 		if rowMode {
 			err = scanRow(targetValue, rows)

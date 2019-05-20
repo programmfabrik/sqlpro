@@ -1,17 +1,60 @@
 package sqlpro
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 )
 
-type structInfo map[string]fieldInfo
+// structInfo is a map to fieldInfo by db_name
+type structInfo map[string]*fieldInfo
+
+func (si structInfo) hasDbName(db_name string) bool {
+	_, ok := si[db_name]
+	return ok
+}
+
+func (si structInfo) primaryKey(db_name string) bool {
+	fieldInfo, ok := si[db_name]
+	if !ok {
+		panic(fmt.Sprintf("isPrimaryKey: db_name %s not found.", db_name))
+	}
+	return fieldInfo.primaryKey
+}
+
+func (si structInfo) notNull(db_name string) bool {
+	fieldInfo, ok := si[db_name]
+	if !ok {
+		panic(fmt.Sprintf("isNotNull: db_name %s not found.", db_name))
+	}
+	return fieldInfo.notNull
+}
+
+func (si structInfo) onlyPrimaryKey() *fieldInfo {
+	var (
+		fi *fieldInfo
+	)
+
+	for _, info := range si {
+		if info.primaryKey {
+			if fi != nil {
+				// more than one
+				return nil
+			}
+			fi = info
+		}
+	}
+
+	return fi
+}
 
 type fieldInfo struct {
 	name       string
 	dbName     string
 	omitEmpty  bool
 	primaryKey bool
+	notNull    bool
+	ptr        bool // set true if the field is a pointer
 }
 
 // getStructInfo returns a per dbName to fieldInfo map
@@ -43,6 +86,9 @@ func getStructInfo(t reflect.Type) structInfo {
 		if info.dbName == "-" {
 			continue
 		}
+
+		info.ptr = field.Type.Kind() == reflect.Ptr
+
 		if info.dbName == "" {
 			info.dbName = field.Name
 		}
@@ -56,11 +102,13 @@ func getStructInfo(t reflect.Type) structInfo {
 				info.primaryKey = true
 			case "omitempty":
 				info.omitEmpty = true
+			case "notnull":
+				info.notNull = true
 			default:
 				// ignore unrecognized
 			}
 		}
-		si[info.dbName] = info
+		si[info.dbName] = &info
 	}
 	return si
 }
