@@ -2,8 +2,10 @@ package sqlpro
 
 import (
 	"fmt"
+	"log"
 	"reflect"
 	"strings"
+	"time"
 )
 
 // checkData checks that the given data is either one of:
@@ -80,7 +82,6 @@ func (db *DB) Insert(table string, data interface{}) error {
 
 	if !structMode {
 		for i := 0; i < rv.Len(); i++ {
-
 			row := reflect.Indirect(rv.Index(i))
 			insert_id, structInfo, err := db.insertStruct(table, row.Interface())
 			if err != nil {
@@ -139,7 +140,7 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 	rows := make([]map[string]interface{}, 0)
 	for i := 0; i < rv.Len(); i++ {
 		row := reflect.Indirect(rv.Index(i)).Interface()
-		values, structInfo := db.valuesFromStruct(row, true)
+		values, structInfo := db.valuesFromStruct(row)
 		rows = append(rows, values)
 
 		for key := range values {
@@ -187,7 +188,7 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 
 func (db *DB) insertStruct(table string, row interface{}) (int64, structInfo, error) {
 
-	values, info := db.valuesFromStruct(row, true)
+	values, info := db.valuesFromStruct(row)
 	sql, args := db.insertClauseFromValues(table, values, info)
 
 	insert_id, err := db.exec(1, sql, args...)
@@ -221,7 +222,7 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, error)
 		valid bool
 	)
 
-	values, structInfo := db.valuesFromStruct(row, false)
+	values, structInfo := db.valuesFromStruct(row)
 
 	update := []string{"UPDATE "}
 	update = append(update, db.Esc(table))
@@ -283,9 +284,19 @@ func (db *DB) Update(table string, data interface{}) error {
 			return err
 		}
 		updateSql = append(updateSql, update)
+	} else {
+		for i := 0; i < rv.Len(); i++ {
+			row := reflect.Indirect(rv.Index(i))
+			update, err := db.updateClauseFromRow(table, row.Interface())
+			if err != nil {
+				return err
+			}
+			updateSql = append(updateSql, update)
+		}
 	}
 
 	_, err = db.exec(1, strings.Join(updateSql, ";\n"))
+
 	db.DebugNext = false
 	if err != nil {
 		return err
@@ -293,24 +304,77 @@ func (db *DB) Update(table string, data interface{}) error {
 	return nil
 }
 
-// escValue returns the escaped value suitable for UPDATE & INSERT
-func (db *DB) escValue(value interface{}, fieldInfo *fieldInfo) string {
-	if isZero(value) && !fieldInfo.notNull {
-		return "null"
+// Save saves the given data. It performs an INSERT if the only
+// primary key is zero, and and UPDATE if it is not. It panics
+// if it the record has no primary key or less than one
+func (db *DB) Save(table string, data interface{}) error {
+
+	rv, structMode, err := checkData(data)
+	if err != nil {
+		return err
 	}
+
+	if structMode {
+		return db.saveRow(table, data)
+	} else {
+		for i := 0; i < rv.Len(); i++ {
+			err = db.saveRow(table, rv.Index(i).Interface())
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (db *DB) saveRow(table string, data interface{}) error {
+	row := reflect.Indirect(reflect.ValueOf(data))
+
+	values, info := db.valuesFromStruct(row.Interface())
+	pk := info.onlyPrimaryKey()
+
+	if pk == nil {
+		return fmt.Errorf("Save needs a struct with exactly one 'pk' field.")
+	}
+
+	pk_value, ok := values[pk.dbName]
+	if !ok || isZero(pk_value) {
+		return db.Insert(table, data)
+	} else {
+		return db.Update(table, data)
+	}
+
+}
+
+// escValue returns the escaped value suitable for UPDATE & INSERT
+func (db *DB) escValue(value interface{}, fi *fieldInfo) string {
+
+	if isZero(value) {
+		if fi.ptr {
+			return "null" // write NULL if we use a pointer
+		}
+		if fi.null {
+			return "null" // write NULL only if it is explicitly set
+		}
+	}
+
 	switch v := value.(type) {
 	case string:
 		return "'" + strings.ReplaceAll(v, "'", "''") + "'"
 	case nil:
 		return "null"
+	case time.Time:
+		return fmt.Sprintf("'%s'", v.Format(time.RFC3339))
 	default:
+		log.Printf("Casting: %T", value)
 		return fmt.Sprintf("%v", value)
 	}
 }
 
 // valuesFromStruct returns the relevant values
 // from struct, as map
-func (db *DB) valuesFromStruct(data interface{}, omitEmpty bool) (map[string]interface{}, structInfo) {
+func (db *DB) valuesFromStruct(data interface{}) (map[string]interface{}, structInfo) {
 	var (
 		info   structInfo
 		values map[string]interface{}
@@ -328,7 +392,7 @@ func (db *DB) valuesFromStruct(data interface{}, omitEmpty bool) (map[string]int
 		actualData := dataF.Interface()
 		isZero := isZero(actualData)
 
-		if isZero && omitEmpty && fieldInfo.omitEmpty {
+		if isZero && fieldInfo.omitEmpty {
 			continue
 		}
 		values[fieldInfo.dbName] = actualData

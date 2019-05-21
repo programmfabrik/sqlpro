@@ -116,7 +116,7 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 		case *string, string:
 			data[idx] = &sql.NullString{}
 			nullValueByIdx[idx] = fieldV
-		case *int64, int64:
+		case *int64, int64, uint64, *uint64:
 			data[idx] = &sql.NullInt64{}
 			nullValueByIdx[idx] = fieldV
 		case *float64, float64:
@@ -142,8 +142,8 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 
 	// Read back data from Null scanners which we used above
 	for idx, fieldV := range nullValueByIdx {
-		switch fieldV.Interface().(type) {
-		case *string, *int64, *float64:
+		switch v0 := fieldV.Interface().(type) {
+		case *string, *int64, *uint64, *float64:
 			switch v := data[idx].(type) {
 			case *sql.NullString:
 				if (*v).Valid {
@@ -153,7 +153,13 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 				}
 			case *sql.NullInt64:
 				if (*v).Valid {
-					fieldV.Set(reflect.ValueOf(&(*v).Int64))
+					switch v0.(type) {
+					case *int64:
+						fieldV.Set(reflect.ValueOf(&(*v).Int64))
+					case *uint64:
+						ui := uint64((*v).Int64)
+						fieldV.Set(reflect.ValueOf(&ui))
+					}
 				} else {
 					fieldV.Set(reflect.Zero(fieldV.Type()))
 				}
@@ -169,9 +175,20 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 			case *sql.NullString:
 				fieldV.SetString((*v).String)
 			case *sql.NullInt64:
-				fieldV.SetInt((*v).Int64)
+				switch v0.(type) {
+				case int64:
+					fieldV.SetInt((*v).Int64)
+				case uint64:
+					fieldV.SetUint(uint64((*v).Int64))
+				}
+
 			case *sql.NullFloat64:
 				fieldV.SetFloat((*v).Float64)
+			}
+		case uint64:
+			switch v := data[idx].(type) {
+			case *sql.NullInt64:
+				fieldV.SetUint(uint64((*v).Int64))
 			}
 		}
 	}

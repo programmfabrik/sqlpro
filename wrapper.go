@@ -57,11 +57,15 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 	return nil
 }
 
-// Exec wraps DB.Exec and automatically checks the number of Affected rows
-func (db *DB) Exec(expRows int64, execSql string, args ...interface{}) (int64, error) {
-	id, err := db.exec(expRows, execSql, args)
+func (db *DB) Exec(execSql string, args ...interface{}) error {
+	_, err := db.exec(-1, execSql, args)
 	db.DebugNext = false
-	return id, err
+	return err
+}
+
+func (db *DB) Delete(execSql string, args ...interface{}) error {
+	_, err := db.exec(-1, "DELETE FROM "+execSql, args)
+	return err
 }
 
 func (db *DB) PrintQuery(query string, args ...interface{}) {
@@ -94,17 +98,26 @@ func (db *DB) PrintQuery(query string, args ...interface{}) {
 
 }
 
+// exec wraps DB.Exec and automatically checks the number of Affected rows
+// if expRows == -1, the check is skipped
 func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, error) {
 	if db.DebugNext {
 		log.Printf("SQL: %s ARGS: %v", execSql, args)
 	}
 	result, err := db.DB.Exec(execSql, args...)
 	if err != nil {
+		if !db.DebugNext {
+			log.Printf("\n\nDatabase Error: %s\n\nSQL:\n%s \n\nARGS:\n%v", err, execSql, args)
+		}
 		return 0, err
 	}
 	row_count, err := result.RowsAffected()
 	if err != nil {
 		return 0, err
+	}
+
+	if expRows == -1 {
+		return row_count, nil
 	}
 
 	if row_count != expRows {

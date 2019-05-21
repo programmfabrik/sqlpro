@@ -68,10 +68,15 @@ func TestMain(m *testing.M) {
 func TestInsertSliceStructPtr(t *testing.T) {
 	data := []*testRow{
 		&testRow{
-			B: "fooNO",
+			B: "fooUPDATEME",
 		},
 		&testRow{
 			B: "bar",
+			C: "other",
+			D: 1.2345,
+		},
+		&testRow{
+			B: "torsten",
 			C: "other",
 			D: 1.2345,
 		},
@@ -144,6 +149,43 @@ func TestUpdate(t *testing.T) {
 	}
 	// db.DebugNext = true
 	err := db.Update("test", tr)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestUpdateMany(t *testing.T) {
+	trs := []*testRow{
+		&testRow{
+			A: 1,
+			B: "foo",
+		},
+		&testRow{
+			A: 3,
+			B: "torsten2",
+		},
+	}
+
+	err := db.Update("test", trs)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestSaveMany(t *testing.T) {
+	trs := []*testRow{
+		&testRow{
+			B: "henk",
+		},
+		&testRow{
+			A: 3,
+			B: "torsten3",
+		},
+	}
+
+	db.DebugNext = true
+
+	err := db.Save("test", trs)
 	if err != nil {
 		t.Error(err)
 	}
@@ -319,6 +361,29 @@ func TestCountAll(t *testing.T) {
 	}
 }
 
+func TestCountUint(t *testing.T) {
+	var (
+		i   uint64
+		i2  *uint64
+		err error
+	)
+
+	err = db.Query(&i, "SELECT count(*) FROM test")
+	if err != nil {
+		t.Error(err)
+	}
+	if i <= 0 {
+		t.Errorf("count needs to be > 0: %v.", i)
+	}
+	err = db.Query(&i2, "SELECT count(*) FROM test")
+	if err != nil {
+		t.Error(err)
+	}
+	if i2 == nil || *i2 <= 0 {
+		t.Errorf("count needs to be > 0: %v.", *i2)
+	}
+}
+
 func TestSliceStringPtr(t *testing.T) {
 	var (
 		s   [][]*string
@@ -329,6 +394,27 @@ func TestSliceStringPtr(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+func TestSave(t *testing.T) {
+	var (
+		tr  testRow
+		err error
+	)
+	tr = testRow{
+		B: "foo_save",
+	}
+
+	err = db.Save("test", &tr)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = db.Save("test", &tr)
+	if err != nil {
+		t.Error(err)
+	}
+
 }
 
 func TestSliceString(t *testing.T) {

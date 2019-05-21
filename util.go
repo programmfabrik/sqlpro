@@ -22,14 +22,6 @@ func (si structInfo) primaryKey(db_name string) bool {
 	return fieldInfo.primaryKey
 }
 
-func (si structInfo) notNull(db_name string) bool {
-	fieldInfo, ok := si[db_name]
-	if !ok {
-		panic(fmt.Sprintf("isNotNull: db_name %s not found.", db_name))
-	}
-	return fieldInfo.notNull
-}
-
 func (si structInfo) onlyPrimaryKey() *fieldInfo {
 	var (
 		fi *fieldInfo
@@ -53,7 +45,7 @@ type fieldInfo struct {
 	dbName     string
 	omitEmpty  bool
 	primaryKey bool
-	notNull    bool
+	null       bool
 	ptr        bool // set true if the field is a pointer
 }
 
@@ -102,8 +94,8 @@ func getStructInfo(t reflect.Type) structInfo {
 				info.primaryKey = true
 			case "omitempty":
 				info.omitEmpty = true
-			case "notnull":
-				info.notNull = true
+			case "null":
+				info.null = true
 			default:
 				// ignore unrecognized
 			}
