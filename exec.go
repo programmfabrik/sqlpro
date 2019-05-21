@@ -362,13 +362,15 @@ func (db *DB) escValue(value interface{}, fi *fieldInfo) string {
 	switch v := value.(type) {
 	case string:
 		return "'" + strings.ReplaceAll(v, "'", "''") + "'"
+	case *string:
+		return "'" + strings.ReplaceAll(*v, "'", "''") + "'"
 	case nil:
 		return "null"
 	case time.Time:
 		return fmt.Sprintf("'%s'", v.Format(time.RFC3339))
 	default:
 		log.Printf("Casting: %T", value)
-		return fmt.Sprintf("%v", value)
+		return fmt.Sprintf("%s", value)
 	}
 }
 

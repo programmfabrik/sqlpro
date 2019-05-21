@@ -13,6 +13,7 @@ type DB struct {
 	DB        dbWrappable
 	Esc       func(string) string // escape function
 	DebugNext bool
+	Debug     bool
 }
 
 type dbWrappable interface {
@@ -44,6 +45,11 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 	)
 
 	// log.Printf("RowMode: %s %v", targetValue.Type().Kind(), rowMode)
+
+	if db.Debug {
+		log.Printf("Query: %s Args: %v", query, args)
+	}
+
 	rows, err = db.DB.Query(query, args...)
 	if err != nil {
 		return err
@@ -58,7 +64,7 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 }
 
 func (db *DB) Exec(execSql string, args ...interface{}) error {
-	_, err := db.exec(-1, execSql, args)
+	_, err := db.exec(-1, execSql, args...)
 	db.DebugNext = false
 	return err
 }
@@ -101,7 +107,7 @@ func (db *DB) PrintQuery(query string, args ...interface{}) {
 // exec wraps DB.Exec and automatically checks the number of Affected rows
 // if expRows == -1, the check is skipped
 func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, error) {
-	if db.DebugNext {
+	if db.DebugNext || db.Debug {
 		log.Printf("SQL: %s ARGS: %v", execSql, args)
 	}
 	result, err := db.DB.Exec(execSql, args...)
