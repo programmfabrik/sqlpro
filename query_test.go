@@ -2,6 +2,8 @@ package sqlpro
 
 import (
 	"database/sql"
+	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -14,12 +16,36 @@ import (
 
 var db *DB
 
+type jsonStore struct {
+	Field  string `db:"field"`
+	Field2 string `db:"field2"`
+}
+
+func (js jsonStore) Value() (driver.Value, error) {
+	if js.Field == "" && js.Field2 == "" {
+		return nil, nil
+	}
+	return json.Marshal(js)
+}
+
+func (js *jsonStore) Scan(value interface{}) error {
+	switch v := value.(type) {
+	case nil:
+		return nil
+	case []byte:
+		return json.Unmarshal(v, &js)
+	default:
+		return fmt.Errorf("jsonStore: Unable to Scan type %T", value)
+	}
+}
+
 type testRow struct {
 	A int64      `db:"a,pk,omitempty"`
 	B string     `db:"b,omitempty"`
 	C string     `db:"c,notnull"`
 	D float64    `db:"d,omitempty"`
 	E *time.Time `db:"e"`
+	F jsonStore  `db:"f"`
 
 	ignore string
 }
@@ -54,7 +80,9 @@ func TestMain(m *testing.M) {
 		b TEXT,
 		c TEXT,
 		d REAL,
-		e DATETIME
+		e DATETIME,
+		f TEXT,
+		"""" TEXT
 	);
 	`)
 
@@ -64,7 +92,7 @@ func TestMain(m *testing.M) {
 	}
 
 	db = NewWrapper(dbWrap)
-	db.Debug = true
+	db.Debug = false
 
 	exitCode := m.Run()
 	cleanup()
@@ -89,6 +117,7 @@ func TestInsertSliceStructPtr(t *testing.T) {
 			C: "other",
 			D: 1.2345,
 			E: &now,
+			F: jsonStore{"Henk", "Torsten"},
 		},
 		&testRow{
 			B: "torsten",
@@ -205,8 +234,6 @@ func TestSaveMany(t *testing.T) {
 		},
 	}
 
-	db.DebugNext = true
-
 	err := db.Save("test", trs)
 	if err != nil {
 		t.Error(err)
@@ -268,11 +295,23 @@ func TestQueryReal(t *testing.T) {
 
 }
 
-func TestQueryOneRowStd(t *testing.T) {
+func TestStandard(t *testing.T) {
+	var (
+		err   error
+		json0 jsonStore
+		json1 string
+	)
 
 	row := testRowPtr{}
 
-	rows, err := db.DB.Query("SELECT b AS b_p, c AS c_p, d AS d_p FROM test ORDER BY a LIMIT 1 OFFSET 1")
+	s := jsonStore{"Henk", "Torsten"}
+
+	_, err = db.DB.Exec("UPDATE test SET f = ? WHERE a = 2", s)
+	if err != nil {
+		t.Error(err)
+	}
+
+	rows, err := db.DB.Query("SELECT b AS b_p, c AS c_p, d AS d_p, f, f FROM test ORDER BY a LIMIT 1 OFFSET 1")
 	if err != nil {
 		t.Error(err)
 	}
@@ -280,9 +319,12 @@ func TestQueryOneRowStd(t *testing.T) {
 	defer rows.Close()
 
 	rows.Next()
-	err = rows.Scan(&row.B_P, &row.C_P, &row.D_P)
+	err = rows.Scan(&row.B_P, &row.C_P, &row.D_P, &json0, &json1)
 	if err != nil {
 		t.Error(err)
+	}
+	if json0.Field != "Henk" || json0.Field2 != "Torsten" {
+		t.Errorf("Field must be Henk and Torsten.")
 	}
 
 }
@@ -295,7 +337,6 @@ func TestQueryPtr(t *testing.T) {
 	s := "henk"
 	row.C_P = &s
 
-	db.DebugNext = true
 	err := db.Query(&row, "SELECT a AS a_p, b AS b_p, c AS c_p, d AS d_p FROM test ORDER BY a LIMIT 1")
 
 	if err != nil {
@@ -366,7 +407,7 @@ func TestQueryAllFloat64Ptr(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if rows[0] != nil {
+	if len(rows) == 0 || rows[0] != nil {
 		t.Errorf("First d needs to be <nil>.")
 	}
 	// litter.Dump(rows)
@@ -481,5 +522,63 @@ func ATestInsertBulk(t *testing.T) {
 	err := db.InsertBulk("test", rows)
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+func TestDelete(t *testing.T) {
+	err := db.Exec("DELETE FROM test WHERE id IN ?", []int64{-1, -2, -3})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestQueryIntSlice(t *testing.T) {
+	err := db.Exec("SELECT * FROM test WHERE id IN ?", []int64{-1, -2, -3})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestReplaceArgs(t *testing.T) {
+
+	int_args := []int64{1, 3, 4, 5}
+	string_args := []string{"a", "b", "c"}
+
+	type test struct {
+		sql    string
+		args   []interface{}
+		expSql string
+		expErr bool
+	}
+
+	type ica []interface{}
+
+	tests := []test{
+		// sql, args, expected, err?
+		test{"ID IN ?", ica{int_args}, "ID IN (1,3,4,5)", false},
+		test{"ID IN '?'", ica{}, "ID IN '?'", false},
+		test{"ID = ?", ica{"hen'k"}, "ID = 'hen''k'", false},
+		test{"ID = ?", ica{5}, "ID = 5", false},
+		test{"ID IN '''", ica{}, "", true},
+		test{"ID IN '?'''", ica{}, "ID IN '?'''", false},
+		test{"ID IN '?''' WHERE ?", ica{int_args}, "ID IN '?''' WHERE (1,3,4,5)", false},
+		test{"ID IN ?", ica{string_args}, "ID IN ('a','b','c')", false},
+	}
+
+	for _, te := range tests {
+		sql, err := db.replaceArgs(te.sql, te.args...)
+		if err != nil {
+			if te.expErr {
+				continue
+			}
+			t.Error(err)
+		} else {
+			if te.expErr {
+				t.Errorf("Error expected for: %s", te.sql)
+			}
+		}
+		if sql != te.expSql {
+			t.Errorf("Replace not matching: %s, exp: %s", sql, te.expSql)
+		}
 	}
 }

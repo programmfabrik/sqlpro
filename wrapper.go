@@ -10,21 +10,23 @@ import (
 )
 
 type DB struct {
-	DB        dbWrappable
-	Esc       func(string) string // escape function
-	DebugNext bool
-	Debug     bool
+	DB          dbWrappable
+	Esc         func(string) string // escape function
+	Debug       bool
+	SingleQuote rune
+	DoubleQuote rune
 }
 
 type DebugLevel int
 
 const (
-	ERROR      DebugLevel = 1
-	UPDATE                = 1
-	INSERT                = 2
-	EXEC                  = 4
-	QUERY                 = 8
-	QUERY_DUMP            = 16
+	PANIC      DebugLevel = 1
+	ERROR                 = 2
+	UPDATE                = 4
+	INSERT                = 8
+	EXEC                  = 16
+	QUERY                 = 32
+	QUERY_DUMP            = 64
 )
 
 type dbWrappable interface {
@@ -40,10 +42,19 @@ func NewWrapper(dbWrap dbWrappable) *DB {
 	)
 	db = new(DB)
 	db.DB = dbWrap
+	db.SingleQuote = '\''
+	db.DoubleQuote = '"'
 	db.Esc = func(s string) string {
 		return `"` + s + `"`
 	}
 	return db
+}
+
+// Log returns a copy with debug enabled
+func (db *DB) Log() *DB {
+	newDB := *db
+	newDB.Debug = true
+	return &newDB
 }
 
 // Query runs a query and fills the received rows or row into the target.
@@ -79,7 +90,6 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 
 func (db *DB) Exec(execSql string, args ...interface{}) error {
 	_, err := db.exec(-1, execSql, args...)
-	db.DebugNext = false
 	return err
 }
 
@@ -126,14 +136,22 @@ func debugError(err error) error {
 // exec wraps DB.Exec and automatically checks the number of Affected rows
 // if expRows == -1, the check is skipped
 func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, error) {
-	if db.DebugNext || db.Debug {
+	var (
+		execSql0 string
+		err      error
+	)
+
+	if db.Debug {
 		log.Printf("SQL: %s ARGS: %v", execSql, args)
 	}
-	result, err := db.DB.Exec(execSql, args...)
+
+	execSql0, err = db.replaceArgs(execSql, args)
 	if err != nil {
-		if !db.DebugNext {
-			log.Printf("\n\nDatabase Error: %s\n\nSQL:\n%s \n\nARGS:\n%v", err, execSql, args)
-		}
+		return 0, err
+	}
+	result, err := db.DB.Exec(execSql0)
+	if err != nil {
+		err = fmt.Errorf("\n\nDatabase Error: %s\n\nSQL:\n%s", err, execSql0)
 		return 0, debugError(err)
 	}
 	row_count, err := result.RowsAffected()

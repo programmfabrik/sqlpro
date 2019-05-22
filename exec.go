@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"time"
 )
 
 // checkData checks that the given data is either one of:
@@ -102,8 +101,6 @@ func (db *DB) Insert(table string, data interface{}) error {
 		}
 	}
 
-	db.DebugNext = false
-
 	// data
 	return nil
 }
@@ -172,13 +169,16 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 				insert = append(insert, ",")
 			}
 			value, _ := row[key]
-			insert = append(insert, db.escValue(value, key_map[key]))
+			escV, err := db.escValue(value, key_map[key])
+			if err != nil {
+				return err
+			}
+			insert = append(insert, escV)
 		}
 		insert = append(insert, ")")
 	}
 
 	_, err = db.exec(int64(rv.Len()), strings.Join(insert, ""))
-	db.DebugNext = false
 	if err != nil {
 		return err
 	}
@@ -204,7 +204,11 @@ func (db *DB) insertClauseFromValues(table string, values map[string]interface{}
 
 	for col, value := range values {
 		cols = append(cols, db.Esc(col))
-		vs = append(vs, db.escValue(value, info[col]))
+		escV, err := db.escValue(value, info[col])
+		if err != nil {
+			panic(err)
+		}
+		vs = append(vs, escV)
 		// vs = append(vs, "?")
 		// args = append(args, value)
 	}
@@ -233,7 +237,10 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, error)
 	for key, value := range values {
 		if structInfo.primaryKey(key) {
 			// skip primary keys for update
-			v := db.escValue(value, structInfo[key])
+			v, err := db.escValue(value, structInfo[key])
+			if err != nil {
+				return "", err
+			}
 			if v == "null" {
 				return "", fmt.Errorf("Unable to build UPDATE clause with <nil> key: %s", key)
 			}
@@ -247,7 +254,11 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, error)
 			}
 			update = append(update, db.Esc(key))
 			update = append(update, "=")
-			update = append(update, db.escValue(value, structInfo[key]))
+			escV, err := db.escValue(value, structInfo[key])
+			if err != nil {
+				return "", err
+			}
+			update = append(update, escV)
 			idx++
 		}
 	}
@@ -295,8 +306,6 @@ func (db *DB) Update(table string, data interface{}) error {
 	}
 
 	_, err = db.exec(1, strings.Join(updateSql, ";\n"))
-
-	db.DebugNext = false
 	if err != nil {
 		return err
 	}
@@ -344,39 +353,6 @@ func (db *DB) saveRow(table string, data interface{}) error {
 		return db.Update(table, data)
 	}
 
-}
-
-// escValue returns the escaped value suitable for UPDATE & INSERT
-func (db *DB) escValue(value interface{}, fi *fieldInfo) string {
-
-	if isZero(value) {
-		if fi.ptr {
-			return "null" // write NULL if we use a pointer
-		}
-		if fi.null {
-			return "null" // write NULL only if it is explicitly set
-		}
-	}
-
-	switch v := value.(type) {
-	case string:
-		return "'" + strings.ReplaceAll(v, "'", "''") + "'"
-	case *string:
-		return "'" + strings.ReplaceAll(*v, "'", "''") + "'"
-	case int64, *int64, int32, *int32, uint64, *uint64, uint32, *uint32, int, *int:
-		return fmt.Sprintf("%d", value)
-	case float64, *float64, float32, *float32, *bool, bool:
-		return fmt.Sprintf("%v", value)
-	case time.Time:
-		return fmt.Sprintf("'%s'", v.Format(time.RFC3339Nano))
-	case *time.Time:
-		return fmt.Sprintf("'%s'", (*v).Format(time.RFC3339Nano))
-	default:
-		// as fallback we use Sprintf to case everything else
-		// log.Printf("Casting: %T: %v", value, value)
-		s := fmt.Sprintf("%s", value)
-		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
-	}
 }
 
 // valuesFromStruct returns the relevant values
