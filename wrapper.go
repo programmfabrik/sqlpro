@@ -16,6 +16,17 @@ type DB struct {
 	Debug     bool
 }
 
+type DebugLevel int
+
+const (
+	ERROR      DebugLevel = 1
+	UPDATE                = 1
+	INSERT                = 2
+	EXEC                  = 4
+	QUERY                 = 8
+	QUERY_DUMP            = 16
+)
+
 type dbWrappable interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
 	Exec(query string, args ...interface{}) (sql.Result, error)
@@ -46,20 +57,23 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 
 	// log.Printf("RowMode: %s %v", targetValue.Type().Kind(), rowMode)
 
-	if db.Debug {
-		log.Printf("Query: %s Args: %v", query, args)
-	}
-
 	rows, err = db.DB.Query(query, args...)
 	if err != nil {
-		return err
+
+		return debugError(fmt.Errorf("%s query: %s", err, query))
 	}
 	defer rows.Close()
 
 	err = Scan(target, rows)
 	if err != nil {
-		return err
+		return debugError(err)
 	}
+
+	if db.Debug {
+		// log.Printf("Query: %s Args: %v", query, args)
+		db.PrintQuery(query, args...)
+	}
+
 	return nil
 }
 
@@ -104,6 +118,11 @@ func (db *DB) PrintQuery(query string, args ...interface{}) {
 
 }
 
+func debugError(err error) error {
+	log.Printf("sqlpro error: %s", err)
+	return err
+}
+
 // exec wraps DB.Exec and automatically checks the number of Affected rows
 // if expRows == -1, the check is skipped
 func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, error) {
@@ -115,7 +134,7 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 		if !db.DebugNext {
 			log.Printf("\n\nDatabase Error: %s\n\nSQL:\n%s \n\nARGS:\n%v", err, execSql, args)
 		}
-		return 0, err
+		return 0, debugError(err)
 	}
 	row_count, err := result.RowsAffected()
 	if err != nil {
@@ -127,12 +146,12 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 	}
 
 	if row_count != expRows {
-		return 0, fmt.Errorf("Exec affected only %d out of %d.", row_count, expRows)
+		return 0, debugError(fmt.Errorf("Exec affected only %d out of %d.", row_count, expRows))
 	}
 
 	last_insert_id, err := result.LastInsertId()
 	if err != nil {
-		return 0, err
+		return 0, debugError(err)
 	}
 	return last_insert_id, nil
 }

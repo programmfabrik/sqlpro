@@ -2,7 +2,6 @@ package sqlpro
 
 import (
 	"fmt"
-	"log"
 	"reflect"
 	"strings"
 	"time"
@@ -364,13 +363,19 @@ func (db *DB) escValue(value interface{}, fi *fieldInfo) string {
 		return "'" + strings.ReplaceAll(v, "'", "''") + "'"
 	case *string:
 		return "'" + strings.ReplaceAll(*v, "'", "''") + "'"
-	case nil:
-		return "null"
+	case int64, *int64, int32, *int32, uint64, *uint64, uint32, *uint32, int, *int:
+		return fmt.Sprintf("%d", value)
+	case float64, *float64, float32, *float32, *bool, bool:
+		return fmt.Sprintf("%v", value)
 	case time.Time:
-		return fmt.Sprintf("'%s'", v.Format(time.RFC3339))
+		return fmt.Sprintf("'%s'", v.Format(time.RFC3339Nano))
+	case *time.Time:
+		return fmt.Sprintf("'%s'", (*v).Format(time.RFC3339Nano))
 	default:
-		log.Printf("Casting: %T", value)
-		return fmt.Sprintf("%s", value)
+		// as fallback we use Sprintf to case everything else
+		// log.Printf("Casting: %T: %v", value, value)
+		s := fmt.Sprintf("%s", value)
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 	}
 }
 

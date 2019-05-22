@@ -2,8 +2,10 @@ package sqlpro
 
 import (
 	"fmt"
+	"log"
 	"reflect"
 	"strings"
+	"time"
 )
 
 // structInfo is a map to fieldInfo by db_name
@@ -38,6 +40,23 @@ func (si structInfo) onlyPrimaryKey() *fieldInfo {
 	}
 
 	return fi
+}
+
+type NullTime struct {
+	Time  *time.Time
+	Valid bool
+}
+
+// Scan implements the Scanner interface.
+func (ni *NullTime) Scan(value interface{}) error {
+	if value == nil {
+		ni.Time, ni.Valid = nil, false
+		return nil
+	}
+	log.Printf("Scan Time: %T", value)
+	ni.Valid = true
+	return nil
+
 }
 
 type fieldInfo struct {

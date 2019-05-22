@@ -6,17 +6,20 @@ import (
 	"log"
 	"os"
 	"testing"
+	"time"
 
+	"github.com/kr/pretty"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 var db *DB
 
 type testRow struct {
-	A int64   `db:"a,pk,omitempty"`
-	B string  `db:"b,omitempty"`
-	C string  `db:"c,notnull"`
-	D float64 `db:"d,omitempty"`
+	A int64      `db:"a,pk,omitempty"`
+	B string     `db:"b,omitempty"`
+	C string     `db:"c,notnull"`
+	D float64    `db:"d,omitempty"`
+	E *time.Time `db:"e"`
 
 	ignore string
 }
@@ -50,7 +53,8 @@ func TestMain(m *testing.M) {
 		a INTEGER PRIMARY KEY AUTOINCREMENT,
 		b TEXT,
 		c TEXT,
-		d REAL
+		d REAL,
+		e DATETIME
 	);
 	`)
 
@@ -60,12 +64,22 @@ func TestMain(m *testing.M) {
 	}
 
 	db = NewWrapper(dbWrap)
+	db.Debug = true
+
 	exitCode := m.Run()
 	cleanup()
 	os.Exit(exitCode)
 }
 
 func TestInsertSliceStructPtr(t *testing.T) {
+	var (
+		err  error
+		now  time.Time
+		now2 time.Time
+	)
+
+	now = time.Now()
+
 	data := []*testRow{
 		&testRow{
 			B: "fooUPDATEME",
@@ -74,6 +88,7 @@ func TestInsertSliceStructPtr(t *testing.T) {
 			B: "bar",
 			C: "other",
 			D: 1.2345,
+			E: &now,
 		},
 		&testRow{
 			B: "torsten",
@@ -84,7 +99,7 @@ func TestInsertSliceStructPtr(t *testing.T) {
 
 	// db.DebugNext = true
 
-	err := db.Insert("test", data)
+	err = db.Insert("test", data)
 	if err != nil {
 		t.Error(err)
 	}
@@ -94,6 +109,13 @@ func TestInsertSliceStructPtr(t *testing.T) {
 			t.Errorf("data[%d].A needs to be set (pk).", idx)
 		}
 	}
+
+	err = db.Query(&now2, "SELECT E FROM test WHERE C = 'other'")
+	if err != nil {
+		t.Error(err)
+	}
+
+	pretty.Println(now2)
 }
 
 func TestInsertSliceStruct(t *testing.T) {

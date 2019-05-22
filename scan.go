@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"time"
 )
 
 type voidScan struct{}
@@ -104,7 +105,7 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 		}
 
 		if skip {
-			// column not mapped in struct, we sill need to allocate
+			// column not mapped in struct, we still need to allocate
 			data[idx] = &voidScan{}
 			continue
 		}
@@ -122,9 +123,11 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 		case *float64, float64:
 			data[idx] = &sql.NullFloat64{}
 			nullValueByIdx[idx] = fieldV
+		case *time.Time:
+			data[idx] = &NullTime{}
 		default:
 			if fieldV.Kind() != reflect.Ptr {
-				// Pass the pointer to the value
+				// Pass the pointer
 				data[idx] = fieldV.Addr().Interface()
 			} else {
 				if fieldV.IsNil() {
