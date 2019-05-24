@@ -68,15 +68,21 @@ func (db *DB) Log() *DB {
 //
 func (db *DB) Query(target interface{}, query string, args ...interface{}) error {
 	var (
-		rows *sql.Rows
-		err  error
+		rows    *sql.Rows
+		err     error
+		query0  string
+		newArgs []interface{}
 	)
+
+	query0, newArgs, err = db.replaceArgs(query, args...)
+	if err != nil {
+		return err
+	}
 
 	// log.Printf("RowMode: %s %v", targetValue.Type().Kind(), rowMode)
 
-	rows, err = db.DB.Query(query, args...)
+	rows, err = db.DB.Query(query0, newArgs...)
 	if err != nil {
-
 		return debugError(fmt.Errorf("%s query: %s", err, query))
 	}
 	defer rows.Close()
@@ -149,7 +155,7 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 	)
 
 	if db.Debug {
-		log.Printf("SQL: %s ARGS: %v", execSql, args)
+		log.Printf("SQL: %s\nARGS:\n%s", execSql, argsToString(args...))
 	}
 
 	execSql0, newArgs, err = db.replaceArgs(execSql, args...)

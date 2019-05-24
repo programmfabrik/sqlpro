@@ -94,7 +94,6 @@ func TestMain(m *testing.M) {
 	}
 
 	db = NewWrapper(dbWrap)
-	db.Debug = false
 
 	exitCode := m.Run()
 	cleanup()
@@ -103,9 +102,9 @@ func TestMain(m *testing.M) {
 
 func TestInsertSliceStructPtr(t *testing.T) {
 	var (
-		err error
-		now time.Time
-		// now2 time.Time
+		err      error
+		now      time.Time
+		readBack testRow
 	)
 
 	now = time.Now()
@@ -129,9 +128,7 @@ func TestInsertSliceStructPtr(t *testing.T) {
 		},
 	}
 
-	// db.DebugNext = true
-
-	err = db.Log().Insert("test", data)
+	err = db.Insert("test", data)
 	if err != nil {
 		t.Error(err)
 	}
@@ -142,13 +139,18 @@ func TestInsertSliceStructPtr(t *testing.T) {
 		}
 	}
 
-	// err = db.Query(&now2, "SELECT E FROM test WHERE C = 'other'")
-	// if err != nil {
-	// 	t.Error(err)
-	// }
+	readBack = testRow{}
 
-	db.PrintQuery("SELECT * FROM test")
+	err = db.Query(&readBack, "SELECT e FROM test WHERE E IS NOT NULL LIMIT 1")
+	if err != nil {
+		t.Error(err)
+	}
 
+	if readBack.E == nil || !readBack.E.Equal(now) {
+		t.Errorf("Time e is <nil> or wrong: %s", readBack.E)
+	}
+
+	// db.PrintQuery("SELECT * FROM test WHERE c = 'other'")
 	// pretty.Println(now2)
 }
 
@@ -203,8 +205,7 @@ func TestUpdate(t *testing.T) {
 		A: 1,
 		B: "foo",
 	}
-	// db.DebugNext = true
-	err := db.Log().Update("test", tr)
+	err := db.Update("test", tr)
 	if err != nil {
 		t.Error(err)
 	}
@@ -248,10 +249,15 @@ func TestSaveMany(t *testing.T) {
 func TestNoPointer(t *testing.T) {
 	row := testRow{}
 
-	err := db.Query(row, "SELECT * FROM test LIMIT 1")
-	if err == nil {
-		t.Errorf("Expected error for passing struct instead of ptr.")
-	}
+	defer func() {
+		r := recover()
+		if r == nil {
+			// no panic -> wrong
+			t.Errorf("Expected error for passing struct instead of ptr.")
+		}
+	}()
+
+	db.Query(row, "SELECT * FROM test LIMIT 1")
 }
 
 func TestNoStruct(t *testing.T) {
@@ -367,10 +373,13 @@ func TestQueryPtr(t *testing.T) {
 }
 
 func TestQueryAll(t *testing.T) {
-	rows := make([]testRow, 0)
+	var rows []testRow
 	err := db.Query(&rows, "SELECT * FROM test")
 	if err != nil {
 		t.Error(err)
+	}
+	if len(rows) == 0 {
+		t.Errorf("0 rows.")
 	}
 }
 
@@ -407,7 +416,7 @@ func TestQueryAllIntPtr(t *testing.T) {
 	// litter.Dump(rows)
 }
 func TestQueryAllFloat64Ptr(t *testing.T) {
-	rows := make([]*float64, 0)
+	var rows []*float64
 	err := db.Query(&rows, "SELECT d FROM test ORDER BY a")
 	if err != nil {
 		t.Error(err)
@@ -497,11 +506,7 @@ func TestSliceString(t *testing.T) {
 	}
 }
 
-func TestDump(t *testing.T) {
-	db.PrintQuery("SELECT * FROM test")
-}
-
-func ATestInsertMany(t *testing.T) {
+func TestInsertMany(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		tr := testRow{
 			B: fmt.Sprintf("row %d", i+1),
@@ -538,10 +543,28 @@ func TestDelete(t *testing.T) {
 }
 
 func TestQueryIntSlice(t *testing.T) {
-	err := db.Exec("SELECT * FROM test WHERE a IN ?", []int64{-1, -2, -3})
+	var dummy int64
+
+	err := db.Query(&dummy, "SELECT * FROM test WHERE a IN ?", []int64{-1, -2, -3})
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+func TAestQuerySqlRows(t *testing.T) {
+	var (
+		err  error
+		rows *sql.Rows
+	)
+	err = db.Query(&rows, "SELECT * FROM test")
+	if err != nil {
+		t.Error(err)
+	}
+	for rows.Next() {
+		log.Printf("row!")
+	}
+	rows.Close()
+
 }
 
 func TestReplaceArgs(t *testing.T) {
@@ -564,15 +587,15 @@ func TestReplaceArgs(t *testing.T) {
 
 	tests := []test{
 		// sql, args, expected, err?
-		test{"SELECT * FROM @ WHERE id IN ?", ica{"test", []int64{-1, -2, -3}}, "SELECT * FROM \"test\" WHERE id IN (-1,-2,-3)", false},
-		test{"ID IN ?", ica{int_args}, "ID IN (1,3,4,5)", false},
+		test{"SELECT * FROM @ WHERE id IN ?", ica{"test", []int64{-1, -2, -3}}, "SELECT * FROM \"test\" WHERE id IN (?,?,?)", false},
+		test{"ID IN ?", ica{int_args}, "ID IN (?,?,?,?)", false},
 		test{"ID IN '?'", ica{}, "ID IN '?'", false},
 		test{"ID = ?", ica{"hen'k"}, "ID = ?", false},
 		test{"ID = ?", ica{5}, "ID = ?", false},
 		test{"ID IN '''", ica{}, "", true},
 		test{"ID IN '?'''", ica{}, "ID IN '?'''", false},
-		test{"ID IN '?''' WHERE ?", ica{int_args}, "ID IN '?''' WHERE (1,3,4,5)", false},
-		test{"ID IN ?", ica{string_args}, "ID IN ('a','b','c')", false},
+		test{"ID IN '?''' WHERE ?", ica{int_args}, "ID IN '?''' WHERE (?,?,?,?)", false},
+		test{"ID IN ?", ica{string_args}, "ID IN (?,?,?)", false},
 	}
 
 	for _, te := range tests {

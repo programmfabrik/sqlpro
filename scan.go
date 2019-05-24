@@ -3,6 +3,7 @@ package sqlpro
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"reflect"
 	"time"
 )
@@ -73,7 +74,6 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 			}
 			targetV.Set(reflect.Append(targetV, newEl))
 		}
-
 	}
 
 	// if target.Kind() == reflect.Ptr {
@@ -125,6 +125,7 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 			nullValueByIdx[idx] = fieldV
 		case *time.Time:
 			data[idx] = &NullTime{}
+			nullValueByIdx[idx] = fieldV
 		default:
 			if fieldV.Kind() != reflect.Ptr {
 				// Pass the pointer
@@ -181,8 +182,6 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 				switch v0.(type) {
 				case int64:
 					fieldV.SetInt((*v).Int64)
-				case uint64:
-					fieldV.SetUint(uint64((*v).Int64))
 				}
 
 			case *sql.NullFloat64:
@@ -193,6 +192,19 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 			case *sql.NullInt64:
 				fieldV.SetUint(uint64((*v).Int64))
 			}
+		case *time.Time:
+			switch v := data[idx].(type) {
+			case *NullTime:
+				if (*v).Valid {
+					fieldV.Set(reflect.ValueOf(v.Time))
+				} else {
+					fieldV.Set(reflect.Zero(fieldV.Type()))
+				}
+			default:
+				panic("Unable to read back null.")
+			}
+		default:
+			panic("Unable to read back null.")
 		}
 	}
 	return nil
@@ -218,7 +230,16 @@ func Scan(target interface{}, rows *sql.Rows) error {
 
 	v := reflect.ValueOf(target)
 	if v.Type().Kind() != reflect.Ptr {
-		return fmt.Errorf("non-pointer %v", v.Type())
+		panic(fmt.Errorf("Scan: non-pointer %v", v.Type()))
+	}
+
+	switch target.(type) {
+	case *sql.Rows:
+		// we set rows to target
+		v.Set(reflect.ValueOf(new(sql.Rows)))
+		log.Printf("target value: %s", v)
+
+		return nil
 	}
 
 	targetValue = v.Elem()

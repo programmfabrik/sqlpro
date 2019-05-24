@@ -3,7 +3,6 @@ package sqlpro
 import (
 	"database/sql/driver"
 	"fmt"
-	"log"
 	"reflect"
 	"strings"
 	"time"
@@ -50,12 +49,19 @@ type NullTime struct {
 
 // Scan implements the Scanner interface.
 func (ni *NullTime) Scan(value interface{}) error {
+	// log.Printf("Scan %T %s", value, value)
 	if value == nil {
 		ni.Time, ni.Valid = nil, false
 		return nil
 	}
-	log.Printf("Scan Time: %T", value)
-	ni.Valid = true
+	switch v := value.(type) {
+	case time.Time:
+		ni.Time = &v
+		ni.Valid = true
+	default:
+		return fmt.Errorf("Unable to scan time: %T %s", value, value)
+	}
+	// pretty.Println(ni)
 	return nil
 
 }
@@ -235,15 +241,8 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 					fi := &fieldInfo{ptr: rv.Type().Elem().Kind() == reflect.Ptr}
 					for i := 0; i < rv.Len(); i++ {
 						item := rv.Index(i).Interface()
-						escV, driverV, err := db.escValue(item, fi)
-						if err != nil {
-							return "", nil, err
-						}
-						if escV == "" {
-							sb.WriteRune(ch)
-							newArgs = append(newArgs, driverV)
-						}
-						parts = append(parts, escV)
+						newArgs = append(newArgs, db.escValue(item, fi))
+						parts = append(parts, "?")
 					}
 					sb.WriteString("(" + strings.Join(parts, ",") + ")")
 					// pretty.Println(parts)
@@ -265,52 +264,49 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 }
 
 // escValue returns the escaped value suitable for UPDATE & INSERT
-func (db *DB) escValue(value interface{}, fi *fieldInfo) (string, driver.Value, error) {
+func (db *DB) escValue(value interface{}, fi *fieldInfo) interface{} {
 
-	var (
-		err error
-	)
-
-	if isZero(value) && fi.allowNull() {
-		return "null", nil, nil
-	}
-
-	switch v := value.(type) {
-	case string:
-		return "'" + strings.ReplaceAll(v, "'", "''") + "'", nil, nil
-	case *string:
-		return "'" + strings.ReplaceAll(*v, "'", "''") + "'", nil, nil
-	case int64, *int64, int32, *int32, uint64, *uint64, uint32, *uint32, int, *int:
-		return fmt.Sprintf("%d", value), nil, nil
-	case float64, *float64, float32, *float32, *bool, bool:
-		return fmt.Sprintf("%v", value), nil, nil
-	case time.Time:
-		return fmt.Sprintf("'%s'", v.Format(time.RFC3339Nano)), nil, nil
-	case *time.Time:
-		return fmt.Sprintf("'%s'", (*v).Format(time.RFC3339Nano)), nil, nil
-	default:
-		rv := reflect.ValueOf(value)
-		if rv.Type().Kind() == reflect.Struct {
-			value_method := rv.MethodByName("Value")
-			if value_method.IsValid() {
-				out := value_method.Call([]reflect.Value{})
-				if out[1].IsNil() {
-					err = nil
-				} else {
-					err = out[1].Interface().(error)
-				}
-				if out[0].IsNil() {
-					return fi.emptyValue, nil, err
-				}
-				return "", out[0].Interface(), err
-			}
-
-			log.Printf("Unable to store struct: %s %v", rv.Type(), value_method.IsValid())
-			return "null", nil, nil
+	if isZero(value) {
+		if fi.allowNull() {
+			return nil
 		}
-		// as fallback we use Sprintf to case everything else
-		log.Printf("Casting: %T: %v", value, value)
-		s := fmt.Sprintf("%s", value)
-		return "'" + strings.ReplaceAll(s, "'", "''") + "'", nil, nil
+		// a pointer which does not allow to store null
+		if fi.ptr {
+			panic("esc Value unimplemented case...")
+		}
 	}
+
+	return value
+}
+
+// argsToString builds a debug string from given args
+func argsToString(args ...interface{}) string {
+	var (
+		s        string
+		sb       strings.Builder
+		rv       reflect.Value
+		argPrint interface{}
+	)
+	sb = strings.Builder{}
+	for idx, arg := range args {
+		if arg == nil {
+			sb.WriteString(fmt.Sprintf("#%d <nil>\n", idx))
+			continue
+		}
+
+		switch arg.(type) {
+		case bool:
+			s = "%v"
+		case int64, int32, uint64, uint32, int:
+			s = "%d"
+		case float64, float32:
+			s = "%b"
+		default:
+			s = "%s"
+		}
+		rv = reflect.ValueOf(arg)
+		argPrint = reflect.Indirect(rv).Interface()
+		sb.WriteString(fmt.Sprintf("#%d %s "+s+"\n", idx, rv.Type(), argPrint))
+	}
+	return sb.String()
 }

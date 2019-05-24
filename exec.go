@@ -87,7 +87,7 @@ func (db *DB) Insert(table string, data interface{}) error {
 			}
 			pk := structInfo.onlyPrimaryKey()
 			if pk != nil {
-				row.FieldByName(pk.name).SetInt(insert_id)
+				setPrimaryKey(row.FieldByName(pk.name), insert_id)
 			}
 		}
 	} else {
@@ -97,12 +97,24 @@ func (db *DB) Insert(table string, data interface{}) error {
 		}
 		pk := structInfo.onlyPrimaryKey()
 		if pk != nil {
-			rv.FieldByName(pk.name).SetInt(insert_id)
+			setPrimaryKey(rv.FieldByName(pk.name), insert_id)
 		}
 	}
 
 	// data
 	return nil
+}
+
+func setPrimaryKey(rv reflect.Value, id int64) {
+	switch rv.Type().Kind() {
+	case reflect.Int64:
+		rv.SetInt(id)
+	case reflect.Uint64:
+		rv.SetUint(uint64(id))
+	default:
+		err := fmt.Errorf("Unknown type to set primary key: %s", rv.Type())
+		panic(err)
+	}
 }
 
 // InsertBulk takes a table name and a slice of struct and inserts
@@ -146,6 +158,7 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 
 	insert := make([]string, 0)
 	keys := make([]string, 0, len(key_map))
+	args := make([]interface{}, 0)
 
 	insert = append(insert, "INSERT INTO ", db.Esc(table), "(")
 	idx := 0
@@ -169,16 +182,13 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 				insert = append(insert, ",")
 			}
 			value, _ := row[key]
-			escV, _, err := db.escValue(value, key_map[key])
-			if err != nil {
-				return err
-			}
-			insert = append(insert, escV)
+			args = append(args, db.escValue(value, key_map[key]))
+			insert = append(insert, "?")
 		}
 		insert = append(insert, ")")
 	}
 
-	_, err = db.exec(int64(rv.Len()), strings.Join(insert, ""))
+	_, err = db.exec(int64(rv.Len()), strings.Join(insert, ""), args)
 	if err != nil {
 		return err
 	}
@@ -207,16 +217,8 @@ func (db *DB) insertClauseFromValues(table string, values map[string]interface{}
 
 	for col, value := range values {
 		cols = append(cols, db.Esc(col))
-		escV, driverV, err := db.escValue(value, info[col])
-		if err != nil {
-			panic(err)
-		}
-		if escV == "" {
-			vs = append(vs, "?")
-			args = append(args, driverV)
-		} else {
-			vs = append(vs, escV)
-		}
+		vs = append(vs, "?")
+		args = append(args, db.escValue(value, info[col]))
 	}
 	return fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)",
 		db.Esc(table),
@@ -228,39 +230,33 @@ func (db *DB) insertClauseFromValues(table string, values map[string]interface{}
 func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []interface{}, error) {
 
 	var (
-		valid bool
-		args  []interface{}
+		valid    bool
+		args     []interface{}
+		pk_value interface{}
 	)
 
 	values, structInfo := db.valuesFromStruct(row)
 
 	update := strings.Builder{}
+	where := strings.Builder{}
+
 	update.WriteString("UPDATE ")
 	update.WriteString(db.Esc(table))
 	update.WriteString(" SET ")
 
-	where := strings.Builder{}
 	where.WriteString(" WHERE ")
 
 	idx := 0
 	for key, value := range values {
 		if structInfo.primaryKey(key) {
 			// skip primary keys for update
-			escV, driverV, err := db.escValue(value, structInfo[key])
-			if err != nil {
-				return "", args, err
-			}
-			if escV == "null" {
+			pk_value = db.escValue(value, structInfo[key])
+			if pk_value == nil {
 				return "", args, fmt.Errorf("Unable to build UPDATE clause with <nil> key: %s", key)
 			}
 			where.WriteString(db.Esc(key))
 			where.WriteString("=")
-			if escV == "" {
-				where.WriteRune(db.PlaceholderValue)
-				args = append(args, driverV)
-			} else {
-				where.WriteString(escV)
-			}
+			where.WriteRune(db.PlaceholderValue)
 			valid = true
 		} else {
 			if idx > 0 {
@@ -268,16 +264,8 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 			}
 			update.WriteString(db.Esc(key))
 			update.WriteString("=")
-			escV, driverV, err := db.escValue(value, structInfo[key])
-			if err != nil {
-				return "", args, err
-			}
-			if escV == "" {
-				update.WriteRune(db.PlaceholderValue)
-				args = append(args, driverV)
-			} else {
-				update.WriteString(escV)
-			}
+			update.WriteRune(db.PlaceholderValue)
+			args = append(args, db.escValue(value, structInfo[key]))
 			idx++
 		}
 	}
@@ -285,6 +273,8 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 	if !valid {
 		return "", args, fmt.Errorf("Unable to build UPDATE clause, at least one key needed.")
 	}
+
+	args = append(args, pk_value)
 
 	// Add where clause
 	return update.String() + where.String(), args, nil
