@@ -260,6 +260,11 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		return "", nil, fmt.Errorf("Unclosed quote %s in \"%s\"", string(inQuote), sqlS)
 	}
 
+	// append left over args
+	for i := nthArg; i < len(args); i++ {
+		newArgs = append(newArgs, args[i])
+	}
+
 	// log.Printf("%s %v -> \"%s\"", sqlS, args, sb.String())
 	return sb.String(), newArgs, nil
 

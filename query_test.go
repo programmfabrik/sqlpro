@@ -604,33 +604,36 @@ func TestQuerySqlRowsNoPtrPtr(t *testing.T) {
 
 func TestReplaceArgs(t *testing.T) {
 	var (
-		sqlS string
-		err  error
+		sqlS    string
+		err     error
+		newArgs []interface{}
 	)
 
 	int_args := []int64{1, 3, 4, 5}
 	string_args := []string{"a", "b", "c"}
 
 	type test struct {
-		sql    string
-		args   interface{}
-		expSql string
-		expErr bool
+		sql         string
+		args        interface{}
+		expSql      string
+		expErr      bool
+		expArgCount int
 	}
 
 	type ica []interface{}
 
 	tests := []test{
 		// sql, args, expected, err?
-		test{"SELECT * FROM @ WHERE id IN ?", ica{"test", []int64{-1, -2, -3}}, `SELECT * FROM "test" WHERE id IN (?,?,?)`, false},
-		test{"ID IN ?", ica{int_args}, "ID IN (?,?,?,?)", false},
-		test{"ID IN '?'", ica{}, "ID IN '?'", false},
-		test{"ID = ?", ica{"hen'k"}, "ID = ?", false},
-		test{"ID = ?", ica{5}, "ID = ?", false},
-		test{"ID IN '''", ica{}, "", true},
-		test{"ID IN '?'''", ica{}, "ID IN '?'''", false},
-		test{"ID IN '?''' WHERE ?", ica{int_args}, "ID IN '?''' WHERE (?,?,?,?)", false},
-		test{"ID IN ?", ica{string_args}, "ID IN (?,?,?)", false},
+		test{"SELECT * FROM @ WHERE id IN ?", ica{"test", []int64{-1, -2, -3}}, `SELECT * FROM "test" WHERE id IN (?,?,?)`, false, 3},
+		test{"ID IN ?", ica{int_args}, "ID IN (?,?,?,?)", false, 4},
+		test{"ID IN '?'", ica{}, "ID IN '?'", false, 0},
+		test{"ID = ?", ica{"hen'k"}, "ID = ?", false, 1},
+		test{"ID = ?", ica{5}, "ID = ?", false, 1},
+		test{"ID IN '''", ica{}, "", true, 0},
+		test{"ID IN '?'''", ica{}, "ID IN '?'''", false, 0},
+		test{"ID IN '?''' WHERE ?", ica{int_args}, "ID IN '?''' WHERE (?,?,?,?)", false, 4},
+		test{"ID IN ?", ica{string_args}, "ID IN (?,?,?)", false, 3},
+		test{"ID IN $1", string_args, "ID IN $1", false, 3},
 	}
 
 	for _, te := range tests {
@@ -653,7 +656,7 @@ func TestReplaceArgs(t *testing.T) {
 			panic(fmt.Sprintf("Unsupported type %T in test.", te.args))
 		}
 		// pretty.Println(args)
-		sqlS, _, err = db.replaceArgs(te.sql, args...)
+		sqlS, newArgs, err = db.replaceArgs(te.sql, args...)
 		if err != nil {
 			if te.expErr {
 				continue
@@ -666,6 +669,9 @@ func TestReplaceArgs(t *testing.T) {
 		}
 		if sqlS != te.expSql {
 			t.Errorf("Replace not matching: %s, exp: %s", sqlS, te.expSql)
+		}
+		if len(newArgs) != te.expArgCount {
+			t.Errorf("Expected arg count wrong: %s, exp: %d", sqlS, te.expArgCount)
 		}
 	}
 }
