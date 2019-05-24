@@ -97,12 +97,16 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 
 	err = Scan(target, rows)
 	if err != nil {
+		panic(err)
 		return debugError(err)
 	}
 
 	if db.Debug {
 		// log.Printf("Query: %s Args: %v", query, args)
-		db.PrintQuery(query, args...)
+		err = db.PrintQuery(query, args...)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	return nil
@@ -113,23 +117,22 @@ func (db *DB) Exec(execSql string, args ...interface{}) error {
 	return err
 }
 
-func (db *DB) Delete(execSql string, args ...interface{}) error {
-	_, err := db.exec(-1, "DELETE FROM "+execSql, args)
-	return err
-}
-
-func (db *DB) PrintQuery(query string, args ...interface{}) {
+func (db *DB) PrintQuery(query string, args ...interface{}) error {
 	var (
-		rows *sql.Rows
-		err  error
+		rows    *sql.Rows
+		err     error
+		query0  string
+		newArgs []interface{}
 	)
 
 	data := make([][]string, 0)
 
-	rows, err = db.DB.Query(query, args...)
+	query0, newArgs, err = db.replaceArgs(query, args...)
+
+	rows, err = db.DB.Query(query0, newArgs...)
 	if err != nil {
 		log.Println(err)
-		return
+		return err
 	}
 	cols, _ := rows.Columns()
 	defer rows.Close()
@@ -137,7 +140,7 @@ func (db *DB) PrintQuery(query string, args ...interface{}) {
 	err = Scan(&data, rows)
 	if err != nil {
 		log.Println(err)
-		return
+		return err
 	}
 
 	fmt.Fprintf(os.Stdout, "\n%s\n\n", query)
@@ -146,6 +149,7 @@ func (db *DB) PrintQuery(query string, args ...interface{}) {
 	table.AppendBulk(data)
 	table.Render()
 
+	return nil
 }
 
 func debugError(err error) error {

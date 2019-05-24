@@ -116,11 +116,14 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 		case *string, string:
 			data[idx] = &sql.NullString{}
 			nullValueByIdx[idx] = fieldV
-		case *int64, int64, uint64, *uint64:
+		case *int64, int64, uint64, *uint64, int, *int:
 			data[idx] = &sql.NullInt64{}
 			nullValueByIdx[idx] = fieldV
 		case *float64, float64:
 			data[idx] = &sql.NullFloat64{}
+			nullValueByIdx[idx] = fieldV
+		case *bool, bool:
+			data[idx] = &sql.NullBool{}
 			nullValueByIdx[idx] = fieldV
 		case *time.Time:
 			data[idx] = &NullTime{}
@@ -146,8 +149,14 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 	// Read back data from Null scanners which we used above
 	for idx, fieldV := range nullValueByIdx {
 		switch v0 := fieldV.Interface().(type) {
-		case *string, *int64, *uint64, *float64:
+		case *string, *int64, *uint64, *float64, *int, *bool:
 			switch v := data[idx].(type) {
+			case *sql.NullBool:
+				if (*v).Valid {
+					fieldV.Set(reflect.ValueOf(&(*v).Bool))
+				} else {
+					fieldV.Set(reflect.Zero(fieldV.Type()))
+				}
 			case *sql.NullString:
 				if (*v).Valid {
 					fieldV.Set(reflect.ValueOf(&(*v).String))
@@ -156,11 +165,25 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 				}
 			case *sql.NullInt64:
 				if (*v).Valid {
+					i64 := (*v).Int64
+
 					switch v0.(type) {
 					case *int64:
-						fieldV.Set(reflect.ValueOf(&(*v).Int64))
+						fieldV.Set(reflect.ValueOf(&i64))
+					case *int32:
+						i32 := int32(i64)
+						fieldV.Set(reflect.ValueOf(&i32))
+					case *int:
+						i := int(i64)
+						fieldV.Set(reflect.ValueOf(&i))
 					case *uint64:
-						ui := uint64((*v).Int64)
+						ui64 := uint64(i64)
+						fieldV.Set(reflect.ValueOf(&ui64))
+					case *uint32:
+						ui32 := uint32(i64)
+						fieldV.Set(reflect.ValueOf(&ui32))
+					case *uint:
+						ui := uint(i64)
 						fieldV.Set(reflect.ValueOf(&ui))
 					}
 				} else {
@@ -173,13 +196,13 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 					fieldV.Set(reflect.Zero(fieldV.Type()))
 				}
 			}
-		case string, int64, float64:
+		case string, int64, float64, int, int32:
 			switch v := data[idx].(type) {
 			case *sql.NullString:
 				fieldV.SetString((*v).String)
 			case *sql.NullInt64:
 				switch v0.(type) {
-				case int64:
+				case int64, int32, int:
 					fieldV.SetInt((*v).Int64)
 				}
 
@@ -190,6 +213,11 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 			switch v := data[idx].(type) {
 			case *sql.NullInt64:
 				fieldV.SetUint(uint64((*v).Int64))
+			}
+		case bool:
+			switch v := data[idx].(type) {
+			case *sql.NullBool:
+				fieldV.SetBool((*v).Bool)
 			}
 		case *time.Time:
 			switch v := data[idx].(type) {
