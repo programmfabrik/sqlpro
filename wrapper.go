@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"strings"
 
 	"github.com/olekukonko/tablewriter"
@@ -85,6 +86,13 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 	if err != nil {
 		return debugError(fmt.Errorf("%s query: %s", err, query))
 	}
+
+	switch target.(type) {
+	case **sql.Rows:
+		reflect.ValueOf(target).Elem().Set(reflect.ValueOf(rows))
+		return nil
+	}
+
 	defer rows.Close()
 
 	err = Scan(target, rows)

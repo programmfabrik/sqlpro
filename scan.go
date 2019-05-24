@@ -3,7 +3,6 @@ package sqlpro
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"reflect"
 	"time"
 )
@@ -233,16 +232,11 @@ func Scan(target interface{}, rows *sql.Rows) error {
 		panic(fmt.Errorf("Scan: non-pointer %v", v.Type()))
 	}
 
-	switch target.(type) {
-	case *sql.Rows:
-		// we set rows to target
-		v.Set(reflect.ValueOf(new(sql.Rows)))
-		log.Printf("target value: %s", v)
-
-		return nil
+	targetValue = v.Elem()
+	if !targetValue.CanAddr() {
+		panic("Scan: Unable to use unadressable field as target.")
 	}
 
-	targetValue = v.Elem()
 	if targetValue.Type().Kind() != reflect.Slice {
 		rowMode = true
 	}

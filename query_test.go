@@ -551,20 +551,55 @@ func TestQueryIntSlice(t *testing.T) {
 	}
 }
 
-func TAestQuerySqlRows(t *testing.T) {
+func TestQuerySqlRows(t *testing.T) {
 	var (
 		err  error
 		rows *sql.Rows
+		a    int64
+		idx  int64
 	)
-	err = db.Query(&rows, "SELECT * FROM test")
+	err = db.Query(&rows, "SELECT a FROM test")
 	if err != nil {
 		t.Error(err)
 	}
-	for rows.Next() {
-		log.Printf("row!")
+	if rows == nil {
+		t.Errorf("Rows == <nil>.")
 	}
-	rows.Close()
 
+	for rows.Next() {
+		err = rows.Scan(&a)
+		if err != nil {
+			t.Error(err)
+		}
+		if a == 0 {
+			t.Errorf("Scan must return > 0 integer.")
+		}
+		idx++
+	}
+
+	err = rows.Close()
+	if err != nil {
+		t.Error(err)
+	}
+	if idx == 0 {
+		t.Errorf("No rows received.")
+	}
+
+}
+
+func TestQuerySqlRowsNoPtrPtr(t *testing.T) {
+	var (
+		rows *sql.Rows
+	)
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Errorf("Expected a panic.")
+		}
+	}()
+
+	db.Query(rows, "SELECT * FROM test")
 }
 
 func TestReplaceArgs(t *testing.T) {
@@ -587,7 +622,7 @@ func TestReplaceArgs(t *testing.T) {
 
 	tests := []test{
 		// sql, args, expected, err?
-		test{"SELECT * FROM @ WHERE id IN ?", ica{"test", []int64{-1, -2, -3}}, "SELECT * FROM \"test\" WHERE id IN (?,?,?)", false},
+		test{"SELECT * FROM @ WHERE id IN ?", ica{"test", []int64{-1, -2, -3}}, `SELECT * FROM "test" WHERE id IN (?,?,?)`, false},
 		test{"ID IN ?", ica{int_args}, "ID IN (?,?,?,?)", false},
 		test{"ID IN '?'", ica{}, "ID IN '?'", false},
 		test{"ID = ?", ica{"hen'k"}, "ID = ?", false},
