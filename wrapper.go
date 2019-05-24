@@ -5,16 +5,18 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/olekukonko/tablewriter"
 )
 
 type DB struct {
-	DB          dbWrappable
-	Esc         func(string) string // escape function
-	Debug       bool
-	SingleQuote rune
-	DoubleQuote rune
+	DB               dbWrappable
+	Debug            bool
+	SingleQuote      rune
+	DoubleQuote      rune
+	PlaceholderValue rune
+	PlaceholderKey   rune
 }
 
 type DebugLevel int
@@ -44,10 +46,14 @@ func NewWrapper(dbWrap dbWrappable) *DB {
 	db.DB = dbWrap
 	db.SingleQuote = '\''
 	db.DoubleQuote = '"'
-	db.Esc = func(s string) string {
-		return `"` + s + `"`
-	}
+	db.PlaceholderValue = '?'
+	db.PlaceholderKey = '@'
+
 	return db
+}
+
+func (db *DB) Esc(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
 // Log returns a copy with debug enabled
@@ -139,19 +145,20 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 	var (
 		execSql0 string
 		err      error
+		newArgs  []interface{}
 	)
 
 	if db.Debug {
 		log.Printf("SQL: %s ARGS: %v", execSql, args)
 	}
 
-	execSql0, err = db.replaceArgs(execSql, args)
+	execSql0, newArgs, err = db.replaceArgs(execSql, args...)
 	if err != nil {
 		return 0, err
 	}
-	result, err := db.DB.Exec(execSql0)
+	result, err := db.DB.Exec(execSql0, newArgs...)
 	if err != nil {
-		err = fmt.Errorf("\n\nDatabase Error: %s\n\nSQL:\n%s", err, execSql0)
+		err = fmt.Errorf("\n\nDatabase Error: %s\n\nSQL:\n %s \nARGS:\n %v\n", err, execSql0, newArgs)
 		return 0, debugError(err)
 	}
 	row_count, err := result.RowsAffected()

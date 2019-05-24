@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kr/pretty"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -33,6 +32,9 @@ func (js *jsonStore) Scan(value interface{}) error {
 	case nil:
 		return nil
 	case []byte:
+		if len(v) == 0 {
+			return nil
+		}
 		return json.Unmarshal(v, &js)
 	default:
 		return fmt.Errorf("jsonStore: Unable to Scan type %T", value)
@@ -101,9 +103,9 @@ func TestMain(m *testing.M) {
 
 func TestInsertSliceStructPtr(t *testing.T) {
 	var (
-		err  error
-		now  time.Time
-		now2 time.Time
+		err error
+		now time.Time
+		// now2 time.Time
 	)
 
 	now = time.Now()
@@ -111,6 +113,7 @@ func TestInsertSliceStructPtr(t *testing.T) {
 	data := []*testRow{
 		&testRow{
 			B: "fooUPDATEME",
+			F: jsonStore{"Yo", "Mama"},
 		},
 		&testRow{
 			B: "bar",
@@ -128,7 +131,7 @@ func TestInsertSliceStructPtr(t *testing.T) {
 
 	// db.DebugNext = true
 
-	err = db.Insert("test", data)
+	err = db.Log().Insert("test", data)
 	if err != nil {
 		t.Error(err)
 	}
@@ -139,12 +142,14 @@ func TestInsertSliceStructPtr(t *testing.T) {
 		}
 	}
 
-	err = db.Query(&now2, "SELECT E FROM test WHERE C = 'other'")
-	if err != nil {
-		t.Error(err)
-	}
+	// err = db.Query(&now2, "SELECT E FROM test WHERE C = 'other'")
+	// if err != nil {
+	// 	t.Error(err)
+	// }
 
-	pretty.Println(now2)
+	db.PrintQuery("SELECT * FROM test")
+
+	// pretty.Println(now2)
 }
 
 func TestInsertSliceStruct(t *testing.T) {
@@ -199,7 +204,7 @@ func TestUpdate(t *testing.T) {
 		B: "foo",
 	}
 	// db.DebugNext = true
-	err := db.Update("test", tr)
+	err := db.Log().Update("test", tr)
 	if err != nil {
 		t.Error(err)
 	}
@@ -526,27 +531,31 @@ func ATestInsertBulk(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	err := db.Exec("DELETE FROM test WHERE id IN ?", []int64{-1, -2, -3})
+	err := db.Exec("DELETE FROM test WHERE a IN ?", []int64{-1, -2, -3})
 	if err != nil {
 		t.Error(err)
 	}
 }
 
 func TestQueryIntSlice(t *testing.T) {
-	err := db.Exec("SELECT * FROM test WHERE id IN ?", []int64{-1, -2, -3})
+	err := db.Exec("SELECT * FROM test WHERE a IN ?", []int64{-1, -2, -3})
 	if err != nil {
 		t.Error(err)
 	}
 }
 
 func TestReplaceArgs(t *testing.T) {
+	var (
+		sqlS string
+		err  error
+	)
 
 	int_args := []int64{1, 3, 4, 5}
 	string_args := []string{"a", "b", "c"}
 
 	type test struct {
 		sql    string
-		args   []interface{}
+		args   interface{}
 		expSql string
 		expErr bool
 	}
@@ -555,10 +564,11 @@ func TestReplaceArgs(t *testing.T) {
 
 	tests := []test{
 		// sql, args, expected, err?
+		test{"SELECT * FROM @ WHERE id IN ?", ica{"test", []int64{-1, -2, -3}}, "SELECT * FROM \"test\" WHERE id IN (-1,-2,-3)", false},
 		test{"ID IN ?", ica{int_args}, "ID IN (1,3,4,5)", false},
 		test{"ID IN '?'", ica{}, "ID IN '?'", false},
-		test{"ID = ?", ica{"hen'k"}, "ID = 'hen''k'", false},
-		test{"ID = ?", ica{5}, "ID = 5", false},
+		test{"ID = ?", ica{"hen'k"}, "ID = ?", false},
+		test{"ID = ?", ica{5}, "ID = ?", false},
 		test{"ID IN '''", ica{}, "", true},
 		test{"ID IN '?'''", ica{}, "ID IN '?'''", false},
 		test{"ID IN '?''' WHERE ?", ica{int_args}, "ID IN '?''' WHERE (1,3,4,5)", false},
@@ -566,7 +576,26 @@ func TestReplaceArgs(t *testing.T) {
 	}
 
 	for _, te := range tests {
-		sql, err := db.replaceArgs(te.sql, te.args...)
+
+		args := make([]interface{}, 0)
+		switch v := te.args.(type) {
+		case []int64:
+			for _, arg := range v {
+				args = append(args, arg)
+			}
+		case []string:
+			for _, arg := range v {
+				args = append(args, arg)
+			}
+		case ica:
+			for _, arg := range v {
+				args = append(args, arg)
+			}
+		default:
+			panic(fmt.Sprintf("Unsupported type %T in test.", te.args))
+		}
+		// pretty.Println(args)
+		sqlS, _, err = db.replaceArgs(te.sql, args...)
 		if err != nil {
 			if te.expErr {
 				continue
@@ -577,8 +606,8 @@ func TestReplaceArgs(t *testing.T) {
 				t.Errorf("Error expected for: %s", te.sql)
 			}
 		}
-		if sql != te.expSql {
-			t.Errorf("Replace not matching: %s, exp: %s", sql, te.expSql)
+		if sqlS != te.expSql {
+			t.Errorf("Replace not matching: %s, exp: %s", sqlS, te.expSql)
 		}
 	}
 }

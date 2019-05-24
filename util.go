@@ -1,6 +1,7 @@
 package sqlpro
 
 import (
+	"database/sql/driver"
 	"fmt"
 	"log"
 	"reflect"
@@ -65,7 +66,23 @@ type fieldInfo struct {
 	omitEmpty  bool
 	primaryKey bool
 	null       bool
+	notNull    bool
+	emptyValue string
 	ptr        bool // set true if the field is a pointer
+}
+
+// allowNull returns true if the given can store "null" values
+func (fi *fieldInfo) allowNull() bool {
+	if fi.ptr {
+		if fi.notNull {
+			return false
+		}
+		return true
+	}
+	if fi.null {
+		return true
+	}
+	return false
 }
 
 // getStructInfo returns a per dbName to fieldInfo map
@@ -98,7 +115,17 @@ func getStructInfo(t reflect.Type) structInfo {
 			continue
 		}
 
-		info.ptr = field.Type.Kind() == reflect.Ptr
+		switch field.Type.Kind() {
+		case reflect.Ptr:
+			info.ptr = true
+			info.emptyValue = "null"
+		case reflect.String:
+			info.emptyValue = "''"
+		case reflect.Int:
+			info.emptyValue = "0"
+		default:
+			info.emptyValue = "''"
+		}
 
 		if info.dbName == "" {
 			info.dbName = field.Name
@@ -115,24 +142,33 @@ func getStructInfo(t reflect.Type) structInfo {
 				info.omitEmpty = true
 			case "null":
 				info.null = true
+			case "notnull":
+				info.notNull = true
 			default:
 				// ignore unrecognized
 			}
 		}
+
+		if info.allowNull() && info.emptyValue == "null" {
+			info.emptyValue = "''"
+		}
+
 		si[info.dbName] = &info
 	}
 	return si
 }
 
-// replaceArgs rewrites the string sqlS to embed the args given
-func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, error) {
+// replaceArgs rewrites the string sqlS to embed the slice args given
+// it returns the new placeholder string and the reduced list of arguments.
+func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface{}, error) {
 	var (
-		err         error
 		ch, inQuote rune
 		nthArg      int
-		s           string
 		quoteCount  int
+		newArgs     []interface{}
 	)
+
+	// pretty.Println(args)
 
 	sb := strings.Builder{}
 	// log.Printf("Replace Args: %s %v", sqlS, args)
@@ -161,92 +197,120 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, error) {
 
 		quoteCount = 0
 
-		if ch == '?' {
+		if ch == db.PlaceholderKey {
+			arg := args[nthArg]
+			nthArg++
+
+			switch v := arg.(type) {
+			case *string:
+				sb.WriteString(db.Esc(*v))
+			case string:
+				sb.WriteString(db.Esc(v))
+			default:
+				return "", nil, fmt.Errorf("replaceArgs: Unable to replace %s with type %T, need *string or string.", string(ch), arg)
+			}
+
+			continue
+		}
+
+		if ch == db.PlaceholderValue {
+
 			if nthArg >= len(args) {
-				return "", fmt.Errorf("replaceArgs: Expecting #%d arg.", nthArg)
+				return "", nil, fmt.Errorf("replaceArgs: Expecting #%d arg.", nthArg)
 			}
 			arg := args[nthArg]
-			s, err = db.escapeArg(arg)
-			if err != nil {
-				return "", err
-			}
-			sb.WriteString(s)
 			nthArg++
-			continue
+
+			if driver.IsValue(arg) {
+				newArgs = append(newArgs, arg)
+			} else {
+				rv := reflect.ValueOf(arg)
+				parts := make([]string, 0)
+				// log.Printf("Placeholder! %#v %v", arg, rv.IsValid())
+
+				if rv.IsValid() && rv.Type().Kind() == reflect.Slice && !driver.IsValue(arg) {
+					if rv.Len() == 0 {
+						return "", nil, fmt.Errorf("replaceArgs: Unable to merge empty slice.")
+					}
+					fi := &fieldInfo{ptr: rv.Type().Elem().Kind() == reflect.Ptr}
+					for i := 0; i < rv.Len(); i++ {
+						item := rv.Index(i).Interface()
+						escV, driverV, err := db.escValue(item, fi)
+						if err != nil {
+							return "", nil, err
+						}
+						if escV == "" {
+							sb.WriteRune(ch)
+							newArgs = append(newArgs, driverV)
+						}
+						parts = append(parts, escV)
+					}
+					sb.WriteString("(" + strings.Join(parts, ",") + ")")
+					// pretty.Println(parts)
+					continue
+				} else {
+					newArgs = append(newArgs, arg)
+				}
+			}
 		}
 		sb.WriteRune(ch)
 	}
 	if inQuote > 0 && quoteCount%2 == 1 {
-		return "", fmt.Errorf("Unclosed quote %s in \"%s\"", string(inQuote), sqlS)
+		return "", nil, fmt.Errorf("Unclosed quote %s in \"%s\"", string(inQuote), sqlS)
 	}
 
 	// log.Printf("%s %v -> \"%s\"", sqlS, args, sb.String())
-	return sb.String(), nil
+	return sb.String(), newArgs, nil
 
-}
-
-// arg returns the escape argument
-func (db *DB) escapeArg(arg interface{}) (string, error) {
-	switch v := arg.(type) {
-	case []int64:
-		var parts []string
-		for _, v0 := range v {
-			escV, err := db.escValue(v0, &fieldInfo{ptr: false})
-			if err != nil {
-				return "", err
-			}
-			parts = append(parts, escV)
-		}
-		return "(" + strings.Join(parts, ",") + ")", nil
-	case []string:
-		var parts []string
-		for _, v0 := range v {
-			escV, err := db.escValue(v0, &fieldInfo{ptr: false})
-			if err != nil {
-				return "", err
-			}
-			parts = append(parts, escV)
-		}
-		return "(" + strings.Join(parts, ",") + ")", nil
-	default:
-		return db.escValue(arg, &fieldInfo{ptr: false})
-	}
 }
 
 // escValue returns the escaped value suitable for UPDATE & INSERT
-func (db *DB) escValue(value interface{}, fi *fieldInfo) (string, error) {
+func (db *DB) escValue(value interface{}, fi *fieldInfo) (string, driver.Value, error) {
 
-	if isZero(value) {
-		if fi.ptr {
-			return "null", nil // write NULL if we use a pointer
-		}
-		if fi.null {
-			return "null", nil // write NULL only if it is explicitly set
-		}
+	var (
+		err error
+	)
+
+	if isZero(value) && fi.allowNull() {
+		return "null", nil, nil
 	}
 
 	switch v := value.(type) {
 	case string:
-		return "'" + strings.ReplaceAll(v, "'", "''") + "'", nil
+		return "'" + strings.ReplaceAll(v, "'", "''") + "'", nil, nil
 	case *string:
-		return "'" + strings.ReplaceAll(*v, "'", "''") + "'", nil
+		return "'" + strings.ReplaceAll(*v, "'", "''") + "'", nil, nil
 	case int64, *int64, int32, *int32, uint64, *uint64, uint32, *uint32, int, *int:
-		return fmt.Sprintf("%d", value), nil
+		return fmt.Sprintf("%d", value), nil, nil
 	case float64, *float64, float32, *float32, *bool, bool:
-		return fmt.Sprintf("%v", value), nil
+		return fmt.Sprintf("%v", value), nil, nil
 	case time.Time:
-		return fmt.Sprintf("'%s'", v.Format(time.RFC3339Nano)), nil
+		return fmt.Sprintf("'%s'", v.Format(time.RFC3339Nano)), nil, nil
 	case *time.Time:
-		return fmt.Sprintf("'%s'", (*v).Format(time.RFC3339Nano)), nil
+		return fmt.Sprintf("'%s'", (*v).Format(time.RFC3339Nano)), nil, nil
 	default:
 		rv := reflect.ValueOf(value)
 		if rv.Type().Kind() == reflect.Struct {
-			log.Printf("Unable to store struct: %s", rv.Type())
-			return "null", nil
+			value_method := rv.MethodByName("Value")
+			if value_method.IsValid() {
+				out := value_method.Call([]reflect.Value{})
+				if out[1].IsNil() {
+					err = nil
+				} else {
+					err = out[1].Interface().(error)
+				}
+				if out[0].IsNil() {
+					return fi.emptyValue, nil, err
+				}
+				return "", out[0].Interface(), err
+			}
+
+			log.Printf("Unable to store struct: %s %v", rv.Type(), value_method.IsValid())
+			return "null", nil, nil
 		}
 		// as fallback we use Sprintf to case everything else
-		// log.Printf("Casting: %T: %v", value, value)
+		log.Printf("Casting: %T: %v", value, value)
 		s := fmt.Sprintf("%s", value)
-		return "'" + strings.ReplaceAll(s, "'", "''") + "'", nil
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'", nil, nil
 	}
 }
