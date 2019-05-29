@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -170,94 +171,94 @@ func getStructInfo(t reflect.Type) structInfo {
 // it returns the new placeholder string and the reduced list of arguments.
 func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface{}, error) {
 	var (
-		ch, inQuote rune
-		nthArg      int
-		quoteCount  int
-		newArgs     []interface{}
+		nthArg, lenRunes   int
+		newArgs            []interface{}
+		sb                 strings.Builder
+		runes              []rune
+		currRune, nextRune rune
 	)
 
 	// pretty.Println(args)
 
-	sb := strings.Builder{}
-	// log.Printf("Replace Args: %s %v", sqlS, args)
+	sb = strings.Builder{}
+	nthArg = 0
 
-	for _, ch = range sqlS {
+	runes = []rune(sqlS)
+	lenRunes = len(runes)
 
-		if ch == db.SingleQuote {
-			if inQuote == 0 {
-				inQuote = ch
-			}
-			quoteCount++
+	for i := 0; i < lenRunes; i++ {
+		currRune = runes[i]
+
+		if i+1 < lenRunes {
+			nextRune = runes[i+1]
 		} else {
-			if quoteCount > 0 && quoteCount%2 == 0 {
-				// quote ends
-				inQuote = 0
-				quoteCount = 0
-			}
+			nextRune = 0
 		}
 
-		// log.Printf("CH: %s Quote: %s Quote Count: %d", string(ch), string(inQuote), quoteCount)
-
-		if inQuote > 0 {
-			sb.WriteRune(ch)
+		if currRune != db.PlaceholderKey && currRune != db.PlaceholderValue {
+			sb.WriteRune(currRune)
 			continue
 		}
 
-		quoteCount = 0
+		if (currRune == db.PlaceholderValue && nextRune == db.PlaceholderValue) ||
+			(currRune == db.PlaceholderKey && nextRune == db.PlaceholderKey) {
+			sb.WriteRune(currRune)
+			i++
+			continue
+		}
 
-		if ch == db.PlaceholderKey {
-			arg := args[nthArg]
-			nthArg++
+		// log.Printf("%d curr: %s next: %s", i, string(currRune), string(nextRune))
 
+		if nthArg >= len(args) {
+			return "", nil, fmt.Errorf("replaceArgs: Expecting #%d arg. Got: %d args.", (nthArg + 1), len(args))
+		}
+
+		arg := args[nthArg]
+		nthArg++
+
+		if currRune == db.PlaceholderKey {
 			switch v := arg.(type) {
 			case *string:
 				sb.WriteString(db.Esc(*v))
 			case string:
 				sb.WriteString(db.Esc(v))
 			default:
-				return "", nil, fmt.Errorf("replaceArgs: Unable to replace %s with type %T, need *string or string.", string(ch), arg)
+				return "", nil, fmt.Errorf("replaceArgs: Unable to replace %s with type %T, need *string or string.", string(currRune), arg)
 			}
-
 			continue
 		}
 
-		if ch == db.PlaceholderValue {
-
-			if nthArg >= len(args) {
-				return "", nil, fmt.Errorf("replaceArgs: Expecting #%d arg.", nthArg)
-			}
-			arg := args[nthArg]
-			nthArg++
-
-			if driver.IsValue(arg) {
-				newArgs = append(newArgs, arg)
-			} else {
-				rv := reflect.ValueOf(arg)
-				parts := make([]string, 0)
-				// log.Printf("Placeholder! %#v %v", arg, rv.IsValid())
-
-				if rv.IsValid() && rv.Type().Kind() == reflect.Slice && !driver.IsValue(arg) {
-					if rv.Len() == 0 {
-						return "", nil, fmt.Errorf("replaceArgs: Unable to merge empty slice.")
-					}
-					fi := &fieldInfo{ptr: rv.Type().Elem().Kind() == reflect.Ptr}
-					for i := 0; i < rv.Len(); i++ {
-						item := rv.Index(i).Interface()
-						newArgs = append(newArgs, db.escValue(item, fi))
-						parts = append(parts, "?")
-					}
-					sb.WriteString("(" + strings.Join(parts, ",") + ")")
-					// pretty.Println(parts)
-					continue
-				} else {
-					newArgs = append(newArgs, arg)
-				}
-			}
+		if driver.IsValue(arg) {
+			newArgs = append(newArgs, arg)
+			db.appendPlaceholder(&sb, len(newArgs))
+			continue
 		}
-		sb.WriteRune(ch)
-	}
-	if inQuote > 0 && quoteCount%2 == 1 {
-		return "", nil, fmt.Errorf("Unclosed quote %s in \"%s\"", string(inQuote), sqlS)
+
+		rv := reflect.ValueOf(arg)
+		// log.Printf("Placeholder! %#v %v", arg, rv.IsValid())
+
+		if rv.IsValid() && rv.Type().Kind() == reflect.Slice && !driver.IsValue(arg) {
+			if rv.Len() == 0 {
+				return "", nil, fmt.Errorf("replaceArgs: Unable to merge empty slice.")
+			}
+			sb.WriteRune('(')
+			fi := &fieldInfo{ptr: rv.Type().Elem().Kind() == reflect.Ptr}
+			for i := 0; i < rv.Len(); i++ {
+				if i > 0 {
+					sb.WriteRune(',')
+				}
+				item := rv.Index(i).Interface()
+				newArgs = append(newArgs, db.escValue(item, fi))
+				db.appendPlaceholder(&sb, len(newArgs))
+			}
+			sb.WriteRune(')')
+			// pretty.Println(parts)
+			continue
+		}
+
+		newArgs = append(newArgs, arg)
+		db.appendPlaceholder(&sb, len(newArgs))
+
 	}
 
 	// append left over args
@@ -270,6 +271,17 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 
 }
 
+// appendPlaceholder adds one placeholder to the built
+func (db *DB) appendPlaceholder(sb *strings.Builder, numArg int) {
+	switch db.PlaceholderMode {
+	case QUESTION:
+		sb.WriteRune('?')
+	case DOLLAR:
+		sb.WriteRune('$')
+		sb.WriteString(strconv.Itoa(numArg))
+	}
+}
+
 // escValue returns the escaped value suitable for UPDATE & INSERT
 func (db *DB) escValue(value interface{}, fi *fieldInfo) interface{} {
 
@@ -277,7 +289,7 @@ func (db *DB) escValue(value interface{}, fi *fieldInfo) interface{} {
 		if fi.allowNull() {
 			return nil
 		}
-		// a pointer which does not allow to store null
+		// a pointer whicurrRune does not allow to store null
 		if fi.ptr {
 			panic("esc Value unimplemented case...")
 		}

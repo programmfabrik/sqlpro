@@ -12,12 +12,12 @@ import (
 )
 
 type DB struct {
-	DB               dbWrappable
-	Debug            bool
-	SingleQuote      rune
-	DoubleQuote      rune
-	PlaceholderValue rune
-	PlaceholderKey   rune
+	DB                dbWrappable
+	Debug             bool
+	PlaceholderMode   PlaceholderMode
+	PlaceholderEscape rune
+	PlaceholderValue  rune
+	PlaceholderKey    rune
 }
 
 type DebugLevel int
@@ -30,6 +30,13 @@ const (
 	EXEC                  = 16
 	QUERY                 = 32
 	QUERY_DUMP            = 64
+)
+
+type PlaceholderMode int
+
+const (
+	DOLLAR   PlaceholderMode = 1
+	QUESTION                 = 2
 )
 
 type dbWrappable interface {
@@ -45,9 +52,10 @@ func NewWrapper(dbWrap dbWrappable) *DB {
 	)
 	db = new(DB)
 	db.DB = dbWrap
-	db.SingleQuote = '\''
-	db.DoubleQuote = '"'
+
+	db.PlaceholderMode = QUESTION
 	db.PlaceholderValue = '?'
+	db.PlaceholderEscape = '\\'
 	db.PlaceholderKey = '@'
 
 	return db
