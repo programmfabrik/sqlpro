@@ -1,9 +1,12 @@
 package sqlpro
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
+
+	"golang.org/x/xerrors"
 )
 
 // checkData checks that the given data is either one of:
@@ -148,7 +151,11 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 	rows := make([]map[string]interface{}, 0)
 	for i := 0; i < rv.Len(); i++ {
 		row := reflect.Indirect(rv.Index(i)).Interface()
-		values, structInfo := db.valuesFromStruct(row)
+		values, structInfo, err := db.valuesFromStruct(row)
+		if err != nil {
+			return xerrors.Errorf("sqlpro.InsertBulk error: %w", err)
+		}
+
 		rows = append(rows, values)
 
 		for key := range values {
@@ -182,7 +189,7 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 				insert = append(insert, ",")
 			}
 			value, _ := row[key]
-			args = append(args, db.escValue(value, key_map[key]))
+			args = append(args, db.nullValue(value, key_map[key]))
 			insert = append(insert, "?")
 		}
 		insert = append(insert, ")")
@@ -197,7 +204,11 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 
 func (db *DB) insertStruct(table string, row interface{}) (int64, structInfo, error) {
 
-	values, info := db.valuesFromStruct(row)
+	values, info, err := db.valuesFromStruct(row)
+	if err != nil {
+		return 0, nil, err
+	}
+
 	sql, args, err := db.insertClauseFromValues(table, values, info)
 	if err != nil {
 		return 0, nil, err
@@ -218,7 +229,7 @@ func (db *DB) insertClauseFromValues(table string, values map[string]interface{}
 	for col, value := range values {
 		cols = append(cols, db.Esc(col))
 		vs = append(vs, "?")
-		args = append(args, db.escValue(value, info[col]))
+		args = append(args, db.nullValue(value, info[col]))
 	}
 	return fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)",
 		db.Esc(table),
@@ -235,7 +246,10 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 		pk_value interface{}
 	)
 
-	values, structInfo := db.valuesFromStruct(row)
+	values, structInfo, err := db.valuesFromStruct(row)
+	if err != nil {
+		return "", nil, err
+	}
 
 	update := strings.Builder{}
 	where := strings.Builder{}
@@ -250,7 +264,7 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 	for key, value := range values {
 		if structInfo.primaryKey(key) {
 			// skip primary keys for update
-			pk_value = db.escValue(value, structInfo[key])
+			pk_value = db.nullValue(value, structInfo[key])
 			if pk_value == nil {
 				return "", args, fmt.Errorf("Unable to build UPDATE clause with <nil> key: %s", key)
 			}
@@ -265,7 +279,7 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 			update.WriteString(db.Esc(key))
 			update.WriteString("=")
 			update.WriteRune(db.PlaceholderValue)
-			args = append(args, db.escValue(value, structInfo[key]))
+			args = append(args, db.nullValue(value, structInfo[key]))
 			idx++
 		}
 	}
@@ -351,7 +365,10 @@ func (db *DB) Save(table string, data interface{}) error {
 func (db *DB) saveRow(table string, data interface{}) error {
 	row := reflect.Indirect(reflect.ValueOf(data))
 
-	values, info := db.valuesFromStruct(row.Interface())
+	values, info, err := db.valuesFromStruct(row.Interface())
+	if err != nil {
+		return err
+	}
 	pk := info.onlyPrimaryKey()
 
 	if pk == nil {
@@ -369,11 +386,12 @@ func (db *DB) saveRow(table string, data interface{}) error {
 
 // valuesFromStruct returns the relevant values
 // from struct, as map
-func (db *DB) valuesFromStruct(data interface{}) (map[string]interface{}, structInfo) {
+func (db *DB) valuesFromStruct(data interface{}) (map[string]interface{}, structInfo, error) {
 	var (
 		info   structInfo
 		values map[string]interface{}
 		dataV  reflect.Value
+		err    error
 	)
 
 	values = make(map[string]interface{}, 0)
@@ -390,10 +408,26 @@ func (db *DB) valuesFromStruct(data interface{}) (map[string]interface{}, struct
 		if isZero && fieldInfo.omitEmpty {
 			continue
 		}
+
+		if fieldInfo.isJson {
+			if isZero {
+				if fieldInfo.ptr {
+					actualData = reflect.Zero(fieldInfo.structField.Type).Interface()
+				} else {
+					actualData = ""
+				}
+			} else {
+				actualData, err = json.Marshal(actualData)
+			}
+			if err != nil {
+				return nil, nil, xerrors.Errorf("Unable to marshal as data as json: %s", err)
+			}
+		}
+
 		values[fieldInfo.dbName] = actualData
 		// log.Printf("Name: %s Value: %v %v", fieldInfo.name, dataF.Interface(), isZero)
 	}
-	return values, info
+	return values, info, nil
 }
 
 // isZero returns true if given "x" equals Go's empty value.

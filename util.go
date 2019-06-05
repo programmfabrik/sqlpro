@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/xerrors"
 )
 
 // structInfo is a map to fieldInfo by db_name
@@ -67,15 +69,38 @@ func (ni *NullTime) Scan(value interface{}) error {
 
 }
 
+type NullJson struct {
+	Data  []byte
+	Valid bool
+}
+
+func (nj *NullJson) Scan(value interface{}) error {
+	switch v := value.(type) {
+	case nil:
+		return nil
+	case []byte:
+		if len(v) == 0 {
+			return nil
+		}
+		nj.Data = v
+		nj.Valid = true
+		return nil
+	default:
+		return xerrors.Errorf("sqlpro.NullJson.Scan: Unable to Scan type %T", value)
+	}
+}
+
 type fieldInfo struct {
-	name       string
-	dbName     string
-	omitEmpty  bool
-	primaryKey bool
-	null       bool
-	notNull    bool
-	emptyValue string
-	ptr        bool // set true if the field is a pointer
+	structField reflect.StructField
+	name        string
+	dbName      string
+	omitEmpty   bool
+	primaryKey  bool
+	null        bool
+	notNull     bool
+	isJson      bool
+	emptyValue  string
+	ptr         bool // set true if the field is a pointer
 }
 
 // allowNull returns true if the given can store "null" values
@@ -114,10 +139,11 @@ func getStructInfo(t reflect.Type) structInfo {
 		path := strings.Split(dbTag, ",")
 
 		info := fieldInfo{
-			dbName:     path[0],
-			name:       field.Name,
-			omitEmpty:  false,
-			primaryKey: false,
+			dbName:      path[0],
+			structField: field,
+			name:        field.Name,
+			omitEmpty:   false,
+			primaryKey:  false,
 		}
 
 		if info.dbName == "-" {
@@ -153,6 +179,8 @@ func getStructInfo(t reflect.Type) structInfo {
 				info.null = true
 			case "notnull":
 				info.notNull = true
+			case "json":
+				info.isJson = true
 			default:
 				// ignore unrecognized
 			}
@@ -237,7 +265,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		rv := reflect.ValueOf(arg)
 		// log.Printf("Placeholder! %#v %v", arg, rv.IsValid())
 
-		if rv.IsValid() && rv.Type().Kind() == reflect.Slice && !driver.IsValue(arg) {
+		if rv.IsValid() && rv.Type().Kind() == reflect.Slice {
 			if rv.Len() == 0 {
 				return "", nil, fmt.Errorf("replaceArgs: Unable to merge empty slice.")
 			}
@@ -248,7 +276,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 					sb.WriteRune(',')
 				}
 				item := rv.Index(i).Interface()
-				newArgs = append(newArgs, db.escValue(item, fi))
+				newArgs = append(newArgs, db.nullValue(item, fi))
 				db.appendPlaceholder(&sb, len(newArgs))
 			}
 			sb.WriteRune(')')
@@ -282,16 +310,16 @@ func (db *DB) appendPlaceholder(sb *strings.Builder, numArg int) {
 	}
 }
 
-// escValue returns the escaped value suitable for UPDATE & INSERT
-func (db *DB) escValue(value interface{}, fi *fieldInfo) interface{} {
+// nullValue returns the escaped value suitable for UPDATE & INSERT
+func (db *DB) nullValue(value interface{}, fi *fieldInfo) interface{} {
 
 	if isZero(value) {
 		if fi.allowNull() {
 			return nil
 		}
-		// a pointer whicurrRune does not allow to store null
+		// a pointer which does not allow to store null
 		if fi.ptr {
-			panic("esc Value unimplemented case...")
+			panic(fmt.Errorf(`Unable to store <nil> pointer in "notnull" field: %s`, fi.name))
 		}
 	}
 
@@ -314,11 +342,13 @@ func argsToString(args ...interface{}) string {
 		}
 
 		switch arg.(type) {
-		case bool:
+		case bool, *bool:
 			s = "%v"
-		case int64, int32, uint64, uint32, int:
+		case int64, int32, uint64, uint32, int,
+			*int64, *int32, *uint64, *uint32, *int:
 			s = "%d"
-		case float64, float32:
+		case float64, float32,
+			*float64, *float32:
 			s = "%b"
 		default:
 			s = "%s"

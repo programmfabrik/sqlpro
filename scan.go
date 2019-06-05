@@ -2,9 +2,12 @@ package sqlpro
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
+
+	"golang.org/x/xerrors"
 )
 
 type voidScan struct{}
@@ -91,6 +94,12 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 				skip = true
 			} else {
 				fieldV = targetV.FieldByName(finfo.name)
+				if finfo.isJson {
+					// log.Printf("Setting field to json: %v idx: %d", finfo.name, idx)
+					data[idx] = &NullJson{}
+					nullValueByIdx[idx] = fieldV
+					continue
+				}
 			}
 		} else if isSlice {
 			fieldV = targetV.Index(idx)
@@ -112,7 +121,7 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 		// log.Printf("NIL?: %v %s %T", fieldV.IsValid(), fieldV.Type(), fieldV.Interface())
 
 		// Init Null Scanners for some Pointer Types
-		switch fieldV.Interface().(type) {
+		switch fieldV.Interface().(type) { // FIXME: we could use reflect's Type here
 		case *string, string:
 			data[idx] = &sql.NullString{}
 			nullValueByIdx[idx] = fieldV
@@ -148,6 +157,22 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 
 	// Read back data from Null scanners which we used above
 	for idx, fieldV := range nullValueByIdx {
+		switch v := data[idx].(type) {
+		case *NullJson:
+			if (*v).Valid {
+				// unmarshal
+				newData := reflect.New(fieldV.Type())
+				err = json.Unmarshal((*v).Data, newData.Interface())
+				if err != nil {
+					return xerrors.Errorf("Error unmarshalling data: %s", err)
+				}
+				fieldV.Set(reflect.Indirect(reflect.Value(newData)))
+			} else {
+				fieldV.Set(reflect.Zero(fieldV.Type()))
+			}
+			continue
+		}
+
 		switch v0 := fieldV.Interface().(type) {
 		case *string, *int64, *uint64, *float64, *int, *bool:
 			switch v := data[idx].(type) {

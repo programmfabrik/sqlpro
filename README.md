@@ -18,3 +18,5 @@ func (f Metadata) Value() (driver.Value, error)
 ```
 func (f *Metadata) Scan(v interface{}) error`
 ```
+
+**json** is supported as tag!

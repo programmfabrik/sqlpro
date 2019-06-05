@@ -59,6 +59,23 @@ type testRowPtr struct {
 	D_P *float64 `db:"d_p,omitempty"`
 }
 
+type myStruct struct {
+	A string `json:"a"`
+	B string `json:"b"`
+}
+
+type testRowJson struct {
+	A int64    `db:"a,pk,omitempty"`
+	B string   `db:"b"`
+	F myStruct `db:"f,json"`
+}
+
+type testRowJsonPtr struct {
+	A int64     `db:"a,pk,omitempty"`
+	B *string   `db:"b"`
+	F *myStruct `db:"f,json"`
+}
+
 func cleanup() {
 	os.Remove("./test.db")
 }
@@ -600,6 +617,56 @@ func TestQuerySqlRowsNoPtrPtr(t *testing.T) {
 	}()
 
 	db.Query(rows, "SELECT * FROM test")
+}
+
+func TestJson(t *testing.T) {
+	var (
+		err    error
+		tr     testRowJson
+		trPtr  testRowJsonPtr
+		trPtr2 testRowJsonPtr
+		tr2    []*testRowJson
+	)
+	jt := "JsonTest"
+
+	tr = testRowJson{B: jt, F: myStruct{A: "JsonTest", B: "Torsten"}}
+	err = db.Insert("test", &tr)
+	if err != nil {
+		t.Error(err)
+	}
+	tr.F.B = "Torsten2"
+	err = db.Update("test", &tr)
+	if err != nil {
+		t.Error(err)
+	}
+
+	trPtr = testRowJsonPtr{B: &jt, F: &myStruct{A: "JsonTest", B: "Tom"}}
+	err = db.Save("test", &trPtr)
+	if err != nil {
+		t.Error(err)
+	}
+
+	trPtr2 = testRowJsonPtr{B: &jt, F: nil}
+	err = db.Save("test", &trPtr2)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = db.Query(&tr2, "SELECT * FROM test WHERE B = ? ORDER BY A", "JsonTest")
+	if err != nil {
+		t.Error(err)
+	}
+
+	if tr2[0].F.B != tr.F.B {
+		t.Errorf(`Error reading back json data, expected "%s", got: "%s"`, tr.F.B, tr2[0].F.B)
+	}
+
+	if tr2[1].F.B != trPtr.F.B {
+		t.Errorf(`Error reading back json data, expected "%s", got: "%s"`, trPtr.F.B, tr2[1].F.B)
+	}
+
+	// pretty.Println(tr2)
+	// db.PrintQuery("SELECT *, F IS NULL FROM test")
 }
 
 type phTest struct {

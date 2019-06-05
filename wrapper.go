@@ -184,7 +184,7 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 	}
 	result, err := db.DB.Exec(execSql0, newArgs...)
 	if err != nil {
-		err = fmt.Errorf("\n\nDatabase Error: %s\n\nSQL:\n %s \nARGS:\n %v\n", err, execSql0, newArgs)
+		err = fmt.Errorf("\n\nDatabase Error: %s\n\nSQL:\n %s \nARGS:\n %v\n", err, execSql0, argsToString(newArgs...))
 		return 0, debugError(err)
 	}
 	row_count, err := result.RowsAffected()

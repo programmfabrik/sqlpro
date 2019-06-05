@@ -11,5 +11,6 @@ require (
 	github.com/olekukonko/tablewriter v0.0.1
 	golang.org/x/arch v0.0.0-20190312162104-788fe5ffcd8c // indirect
 	golang.org/x/tools v0.0.0-20190520220859-26647e34d3c0 // indirect
+	golang.org/x/xerrors v0.0.0-20190513163551-3ee3066db522
 	google.golang.org/appengine v1.6.0
 )
