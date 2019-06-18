@@ -99,6 +99,7 @@ func (db *DB) Insert(table string, data interface{}) error {
 			return err
 		}
 		pk := structInfo.onlyPrimaryKey()
+		// log.Printf("PK: %d", insert_id)
 		if pk != nil {
 			setPrimaryKey(rv.FieldByName(pk.name), insert_id)
 		}
@@ -214,10 +215,26 @@ func (db *DB) insertStruct(table string, row interface{}) (int64, structInfo, er
 		return 0, nil, err
 	}
 
+	if db.UseReturningForLastId {
+		pk := info.onlyPrimaryKey()
+		if pk != nil {
+			sql = sql + " RETURNING " + db.Esc(pk.dbName)
+
+			var insert_id int64 = 0
+			err := db.Query(&insert_id, sql, args...)
+			if err != nil {
+				return 0, nil, err
+			}
+			// log.Printf("Returning ID: %d", insert_id)
+			return insert_id, info, nil
+		}
+	}
+
 	insert_id, err := db.exec(1, sql, args...)
 	if err != nil {
 		return 0, nil, err
 	}
+
 	return insert_id, info, nil
 }
 

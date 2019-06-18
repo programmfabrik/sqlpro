@@ -2,6 +2,7 @@ package sqlpro
 
 import (
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -86,7 +87,28 @@ func (nj *NullJson) Scan(value interface{}) error {
 		nj.Valid = true
 		return nil
 	default:
-		return xerrors.Errorf("sqlpro.NullJson.Scan: Unable to Scan type %T", value)
+		return xerrors.Errorf("sqlpro.NullBytes.Scan: Unable to Scan type %T", value)
+	}
+}
+
+type NullRawMessage struct {
+	Data  json.RawMessage
+	Valid bool
+}
+
+func (nj *NullRawMessage) Scan(value interface{}) error {
+	switch v := value.(type) {
+	case nil:
+		return nil
+	case []byte:
+		if len(v) == 0 {
+			return nil
+		}
+		nj.Data = v
+		nj.Valid = true
+		return nil
+	default:
+		return xerrors.Errorf("sqlpro.NullBytes.Scan: Unable to Scan type %T", value)
 	}
 }
 
@@ -256,7 +278,13 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 			continue
 		}
 
-		if driver.IsValue(arg) {
+		isValue := false
+		switch arg.(type) {
+		case json.RawMessage:
+			isValue = true
+		}
+
+		if isValue || driver.IsValue(arg) {
 			newArgs = append(newArgs, arg)
 			db.appendPlaceholder(&sb, len(newArgs))
 			continue
@@ -266,18 +294,31 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		// log.Printf("Placeholder! %#v %v", arg, rv.IsValid())
 
 		if rv.IsValid() && rv.Type().Kind() == reflect.Slice {
-			if rv.Len() == 0 {
+			l := rv.Len()
+			if l == 0 {
 				return "", nil, fmt.Errorf("replaceArgs: Unable to merge empty slice.")
 			}
 			sb.WriteRune('(')
 			fi := &fieldInfo{ptr: rv.Type().Elem().Kind() == reflect.Ptr}
-			for i := 0; i < rv.Len(); i++ {
+			for i := 0; i < l; i++ {
 				if i > 0 {
 					sb.WriteRune(',')
 				}
 				item := rv.Index(i).Interface()
-				newArgs = append(newArgs, db.nullValue(item, fi))
-				db.appendPlaceholder(&sb, len(newArgs))
+				if l > db.MaxPlaceholder {
+					// append literals
+					switch v := item.(type) {
+					case string:
+						sb.WriteString(db.EscValue(v))
+					case int64:
+						sb.WriteString(strconv.FormatInt(v, 10))
+					default:
+						return "", nil, xerrors.Errorf("Unable to add type: %T in slice placeholder. Can only add string and int64", item)
+					}
+				} else {
+					newArgs = append(newArgs, db.nullValue(item, fi))
+					db.appendPlaceholder(&sb, len(newArgs))
+				}
 			}
 			sb.WriteRune(')')
 			// pretty.Println(parts)
@@ -350,8 +391,10 @@ func argsToString(args ...interface{}) string {
 		case float64, float32,
 			*float64, *float32:
 			s = "%b"
-		default:
+		case string, *string:
 			s = "%s"
+		default:
+			s = "%v"
 		}
 		rv = reflect.ValueOf(arg)
 		argPrint = reflect.Indirect(rv).Interface()

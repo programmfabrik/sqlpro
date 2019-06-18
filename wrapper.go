@@ -12,12 +12,15 @@ import (
 )
 
 type DB struct {
-	DB                dbWrappable
-	Debug             bool
-	PlaceholderMode   PlaceholderMode
-	PlaceholderEscape rune
-	PlaceholderValue  rune
-	PlaceholderKey    rune
+	DB                    dbWrappable
+	Debug                 bool
+	PlaceholderMode       PlaceholderMode
+	PlaceholderEscape     rune
+	PlaceholderValue      rune
+	PlaceholderKey        rune
+	MaxPlaceholder        int
+	UseReturningForLastId bool
+	SupportsLastInsertId  bool
 }
 
 type DebugLevel int
@@ -42,6 +45,7 @@ const (
 type dbWrappable interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
 	Exec(query string, args ...interface{}) (sql.Result, error)
+	Close() error
 }
 
 // NewSqlPro returns a wrapped database handle providing
@@ -53,16 +57,24 @@ func NewWrapper(dbWrap dbWrappable) *DB {
 	db = new(DB)
 	db.DB = dbWrap
 
+	// DEFAULTs for sqlite
 	db.PlaceholderMode = QUESTION
 	db.PlaceholderValue = '?'
 	db.PlaceholderEscape = '\\'
 	db.PlaceholderKey = '@'
+	db.MaxPlaceholder = 100
+	db.SupportsLastInsertId = true
+	db.UseReturningForLastId = false
 
 	return db
 }
 
 func (db *DB) Esc(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
+
+func (db *DB) EscValue(s string) string {
+	return `'` + strings.ReplaceAll(s, `'`, `''`) + `'`
 }
 
 // Log returns a copy with debug enabled
@@ -92,7 +104,8 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 
 	rows, err = db.DB.Query(query0, newArgs...)
 	if err != nil {
-		return debugError(fmt.Errorf("%s query: %s", err, query))
+		err = fmt.Errorf("\n\nDatabase Error: %s\n\nSQL:\n %s \nARGS:\n %v\n", err, query0, argsToString(newArgs...))
+		return debugError(err)
 	}
 
 	switch target.(type) {
@@ -105,11 +118,10 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 
 	err = Scan(target, rows)
 	if err != nil {
-		panic(err)
 		return debugError(err)
 	}
 
-	if db.Debug {
+	if db.Debug && !strings.HasPrefix(query, "INSERT INTO") {
 		// log.Printf("Query: %s Args: %v", query, args)
 		err = db.PrintQuery(query, args...)
 		if err != nil {
@@ -139,7 +151,7 @@ func (db *DB) PrintQuery(query string, args ...interface{}) error {
 
 	rows, err = db.DB.Query(query0, newArgs...)
 	if err != nil {
-		log.Println(err)
+		err = fmt.Errorf("\n\nDatabase Error: %s\n\nSQL:\n %s \nARGS:\n %v\n", err, query0, argsToString(newArgs...))
 		return err
 	}
 	cols, _ := rows.Columns()
@@ -158,6 +170,10 @@ func (db *DB) PrintQuery(query string, args ...interface{}) error {
 	table.Render()
 
 	return nil
+}
+
+func (db *DB) Close() error {
+	return db.DB.Close()
 }
 
 func debugError(err error) error {
@@ -198,6 +214,10 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 
 	if row_count != expRows {
 		return 0, debugError(fmt.Errorf("Exec affected only %d out of %d.", row_count, expRows))
+	}
+
+	if !db.SupportsLastInsertId {
+		return 0, nil
 	}
 
 	last_insert_id, err := result.LastInsertId()

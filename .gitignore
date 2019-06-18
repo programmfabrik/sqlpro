@@ -1,5 +1,6 @@
 commit.txt
 go.sum
+go.mod
 tags
 bitbox
 vendor

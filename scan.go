@@ -122,6 +122,9 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 
 		// Init Null Scanners for some Pointer Types
 		switch fieldV.Interface().(type) { // FIXME: we could use reflect's Type here
+		case *json.RawMessage, json.RawMessage:
+			data[idx] = &NullRawMessage{}
+			nullValueByIdx[idx] = fieldV
 		case *string, string:
 			data[idx] = &sql.NullString{}
 			nullValueByIdx[idx] = fieldV
@@ -139,7 +142,7 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 			nullValueByIdx[idx] = fieldV
 		default:
 			if fieldV.Kind() != reflect.Ptr {
-				// Pass the pointer
+				// Pass a pointer
 				data[idx] = fieldV.Addr().Interface()
 			} else {
 				if fieldV.IsNil() {
@@ -167,6 +170,18 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 					return xerrors.Errorf("Error unmarshalling data: %s", err)
 				}
 				fieldV.Set(reflect.Indirect(reflect.Value(newData)))
+			} else {
+				fieldV.Set(reflect.Zero(fieldV.Type()))
+			}
+			continue
+		case *NullRawMessage:
+
+			if (*v).Valid {
+				if fieldV.Type().Kind() == reflect.Ptr {
+					fieldV.Set(reflect.ValueOf(&(*v).Data))
+				} else {
+					fieldV.Set(reflect.ValueOf((*v).Data))
+				}
 			} else {
 				fieldV.Set(reflect.Zero(fieldV.Type()))
 			}

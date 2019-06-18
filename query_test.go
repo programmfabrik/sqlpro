@@ -76,6 +76,16 @@ type testRowJsonPtr struct {
 	F *myStruct `db:"f,json"`
 }
 
+type testRowUint8 struct {
+	A int64           `db:"a,pk,omitempty"`
+	F json.RawMessage `db:"f"`
+}
+
+type testRowUint8Ptr struct {
+	A int64            `db:"a,pk,omitempty"`
+	F *json.RawMessage `db:"f"`
+}
+
 func cleanup() {
 	os.Remove("./test.db")
 }
@@ -323,6 +333,18 @@ func TestQueryReal(t *testing.T) {
 
 }
 
+func TestQuerySlice(t *testing.T) {
+	row := testRow{}
+	db.MaxPlaceholder = 1
+	err := db.Log().Query(&row, "SELECT * FROM test WHERE A IN ? LIMIT 1", []int64{1, 2, 3, 4, 5, 6, 7, 8})
+	if err != nil {
+		t.Error(err)
+	}
+	err = db.Log().Query(&row, "SELECT * FROM test WHERE B IN ? LIMIT 1", []string{"henk", "horst", "torsten"})
+	if err != nil {
+		t.Error(err)
+	}
+}
 func TestStandard(t *testing.T) {
 	var (
 		err   error
@@ -667,6 +689,86 @@ func TestJson(t *testing.T) {
 
 	// pretty.Println(tr2)
 	// db.PrintQuery("SELECT *, F IS NULL FROM test")
+}
+
+func TestUint8(t *testing.T) {
+	var (
+		tr, tr2, tr3 testRowUint8
+		err          error
+	)
+
+	tr = testRowUint8{F: json.RawMessage([]byte("Torsten"))}
+	err = db.Insert("test", &tr)
+	if err != nil {
+		t.Error(err)
+	}
+
+	tr2 = testRowUint8{}
+
+	err = db.Insert("test", &tr2)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = db.Query(&tr3, "SELECT * FROM test WHERE A=?", tr.A)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(tr3.F) != string(tr.F) {
+		t.Errorf("Expected %s got %s", string(tr.F), string(tr3.F))
+	}
+
+	err = db.Query(&tr3, "SELECT * FROM test WHERE A=?", tr2.A)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if tr3.F != nil {
+		t.Errorf("Expected <nil> got %s", string(tr3.F))
+	}
+
+}
+
+func TestUint8Ptr(t *testing.T) {
+	var (
+		tr, tr2, tr3 testRowUint8Ptr
+		err          error
+	)
+
+	rm := json.RawMessage([]byte("Torsten"))
+
+	tr = testRowUint8Ptr{F: &rm}
+	err = db.Insert("test", &tr)
+	if err != nil {
+		t.Error(err)
+	}
+
+	tr2 = testRowUint8Ptr{}
+
+	err = db.Insert("test", &tr2)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = db.Query(&tr3, "SELECT * FROM test WHERE A=?", tr.A)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(*tr.F) != string(*tr3.F) {
+		t.Errorf("Expected %s got %s", string(*tr.F), string(*tr3.F))
+	}
+
+	err = db.Query(&tr3, "SELECT * FROM test WHERE A=?", tr2.A)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if tr3.F != nil {
+		t.Errorf("Expected <nil> got %s", string(*tr3.F))
+	}
+
 }
 
 type phTest struct {
