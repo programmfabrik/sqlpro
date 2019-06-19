@@ -86,8 +86,15 @@ func (nj *NullJson) Scan(value interface{}) error {
 		nj.Data = v
 		nj.Valid = true
 		return nil
+	case string:
+		if len(v) == 0 {
+			return nil
+		}
+		nj.Data = []byte(v)
+		nj.Valid = true
+		return nil
 	default:
-		return xerrors.Errorf("sqlpro.NullBytes.Scan: Unable to Scan type %T", value)
+		return xerrors.Errorf("sqlpro.NullBytes.Scan: Unable to scan type %T", value)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/olekukonko/tablewriter"
+	"golang.org/x/xerrors"
 )
 
 type DB struct {
@@ -105,7 +106,7 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 	rows, err = db.DB.Query(query0, newArgs...)
 	if err != nil {
 		err = fmt.Errorf("\n\nDatabase Error: %s\n\nSQL:\n %s \nARGS:\n %v\n", err, query0, argsToString(newArgs...))
-		return debugError(err)
+		return debugError(sqlError(err, query0, newArgs))
 	}
 
 	switch target.(type) {
@@ -151,8 +152,7 @@ func (db *DB) PrintQuery(query string, args ...interface{}) error {
 
 	rows, err = db.DB.Query(query0, newArgs...)
 	if err != nil {
-		err = fmt.Errorf("\n\nDatabase Error: %s\n\nSQL:\n %s \nARGS:\n %v\n", err, query0, argsToString(newArgs...))
-		return err
+		return sqlError(err, query0, newArgs)
 	}
 	cols, _ := rows.Columns()
 	defer rows.Close()
@@ -181,6 +181,10 @@ func debugError(err error) error {
 	return err
 }
 
+func sqlError(err error, sqlS string, args []interface{}) error {
+	return xerrors.Errorf("Database Error: %s\n\nSQL:\n %s \nARGS:\n%v\n", err, sqlS, argsToString(args...))
+}
+
 // exec wraps DB.Exec and automatically checks the number of Affected rows
 // if expRows == -1, the check is skipped
 func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, error) {
@@ -200,8 +204,7 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 	}
 	result, err := db.DB.Exec(execSql0, newArgs...)
 	if err != nil {
-		err = fmt.Errorf("\n\nDatabase Error: %s\n\nSQL:\n %s \nARGS:\n %v\n", err, execSql0, argsToString(newArgs...))
-		return 0, debugError(err)
+		return 0, debugError(sqlError(err, execSql0, newArgs))
 	}
 	row_count, err := result.RowsAffected()
 	if err != nil {
