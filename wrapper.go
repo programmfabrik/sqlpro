@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/olekukonko/tablewriter"
+	"github.com/programmfabrik/fylr/config"
 	"golang.org/x/xerrors"
 )
 
@@ -22,6 +23,7 @@ type DB struct {
 	MaxPlaceholder        int
 	UseReturningForLastId bool
 	SupportsLastInsertId  bool
+	driver, dsn           string
 }
 
 type DebugLevel int
@@ -105,7 +107,6 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 
 	rows, err = db.DB.Query(query0, newArgs...)
 	if err != nil {
-		err = fmt.Errorf("\n\nDatabase Error: %s\n\nSQL:\n %s \nARGS:\n %v\n", err, query0, argsToString(newArgs...))
 		return debugError(sqlError(err, query0, newArgs))
 	}
 
@@ -173,7 +174,44 @@ func (db *DB) PrintQuery(query string, args ...interface{}) error {
 }
 
 func (db *DB) Close() error {
+	log.Printf("sqlpro.Close: %p %s %s", db.DB, db.driver, db.dsn)
 	return db.DB.Close()
+}
+
+// Open opens a database connection and returns an sqlpro wrap handle
+func Open(driver, dsn string) (*DB, error) {
+
+	conn, err := sql.Open(driver, dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	// conn.SetMaxOpenConns(1)
+
+	err = conn.Ping()
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	wrapper := NewWrapper(conn)
+	// wrapper.Debug = true
+
+	wrapper.dsn = dsn
+	wrapper.driver = driver
+
+	switch config.FylrConfig.Server.DB.Driver {
+	case "postgres":
+		wrapper.PlaceholderMode = DOLLAR
+		wrapper.UseReturningForLastId = true
+		wrapper.SupportsLastInsertId = false
+	case "sqlite3":
+	default:
+		return nil, xerrors.Errorf("sqlpro.Open: Unsupported driver '%s'.", driver)
+	}
+
+	log.Printf("sqlpro.Open: %p %s %s", wrapper.DB, driver, dsn)
+	return wrapper, nil
 }
 
 func debugError(err error) error {
