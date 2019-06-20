@@ -9,12 +9,12 @@ import (
 	"strings"
 
 	"github.com/olekukonko/tablewriter"
-	"github.com/programmfabrik/fylr/config"
 	"golang.org/x/xerrors"
 )
 
 type DB struct {
 	DB                    dbWrappable
+	sqlDB                 *sql.DB // this can be <nil>
 	Debug                 bool
 	PlaceholderMode       PlaceholderMode
 	PlaceholderEscape     rune
@@ -48,12 +48,11 @@ const (
 type dbWrappable interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
 	Exec(query string, args ...interface{}) (sql.Result, error)
-	Close() error
 }
 
 // NewSqlPro returns a wrapped database handle providing
 // access to the sql pro functions.
-func NewWrapper(dbWrap dbWrappable) *DB {
+func New(dbWrap dbWrappable) *DB {
 	var (
 		db *DB
 	)
@@ -164,7 +163,7 @@ func (db *DB) PrintQuery(query string, args ...interface{}) error {
 		return err
 	}
 
-	fmt.Fprintf(os.Stdout, "\n%s\n\n", query)
+	fmt.Fprint(os.Stdout, sqlDebug(query0, newArgs))
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader(cols)
 	table.AppendBulk(data)
@@ -173,54 +172,17 @@ func (db *DB) PrintQuery(query string, args ...interface{}) error {
 	return nil
 }
 
-func (db *DB) Close() error {
-	log.Printf("sqlpro.Close: %p %s %s", db.DB, db.driver, db.dsn)
-	return db.DB.Close()
-}
-
-// Open opens a database connection and returns an sqlpro wrap handle
-func Open(driver, dsn string) (*DB, error) {
-
-	conn, err := sql.Open(driver, dsn)
-	if err != nil {
-		return nil, err
-	}
-
-	// conn.SetMaxOpenConns(1)
-
-	err = conn.Ping()
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-
-	wrapper := NewWrapper(conn)
-	// wrapper.Debug = true
-
-	wrapper.dsn = dsn
-	wrapper.driver = driver
-
-	switch config.FylrConfig.Server.DB.Driver {
-	case "postgres":
-		wrapper.PlaceholderMode = DOLLAR
-		wrapper.UseReturningForLastId = true
-		wrapper.SupportsLastInsertId = false
-	case "sqlite3":
-	default:
-		return nil, xerrors.Errorf("sqlpro.Open: Unsupported driver '%s'.", driver)
-	}
-
-	log.Printf("sqlpro.Open: %p %s %s", wrapper.DB, driver, dsn)
-	return wrapper, nil
-}
-
 func debugError(err error) error {
 	log.Printf("sqlpro error: %s", err)
 	return err
 }
 
 func sqlError(err error, sqlS string, args []interface{}) error {
-	return xerrors.Errorf("Database Error: %s\n\nSQL:\n %s \nARGS:\n%v\n", err, sqlS, argsToString(args...))
+	return xerrors.Errorf("Database Error: %s\n\n%s", err, sqlDebug(sqlS, args))
+}
+
+func sqlDebug(sqlS string, args []interface{}) string {
+	return fmt.Sprintf("SQL:\n %s \nARGS:\n%v\n", sqlS, argsToString(args...))
 }
 
 // exec wraps DB.Exec and automatically checks the number of Affected rows

@@ -1,9 +1,11 @@
 package sqlpro
 
 import (
+	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"log"
 	"reflect"
 	"strconv"
 	"strings"
@@ -389,10 +391,13 @@ func argsToString(args ...interface{}) string {
 		rv       reflect.Value
 		argPrint interface{}
 	)
+	if len(args) == 0 {
+		return " <none>"
+	}
 	sb = strings.Builder{}
 	for idx, arg := range args {
 		if arg == nil {
-			sb.WriteString(fmt.Sprintf("#%d <nil>\n", idx))
+			sb.WriteString(fmt.Sprintf(" #%d <nil>\n", idx))
 			continue
 		}
 
@@ -412,7 +417,54 @@ func argsToString(args ...interface{}) string {
 		}
 		rv = reflect.ValueOf(arg)
 		argPrint = reflect.Indirect(rv).Interface()
-		sb.WriteString(fmt.Sprintf("#%d %s "+s+"\n", idx, rv.Type(), argPrint))
+		sb.WriteString(fmt.Sprintf(" #%d %s "+s+"\n", idx, rv.Type(), argPrint))
 	}
 	return sb.String()
+}
+
+func (db *DB) Close() error {
+	if db.sqlDB == nil {
+		panic("sqlpro.DB.Close: Unable to close, use Open to initialize the wrapper.")
+	}
+	log.Printf("sqlpro.Close: %p %s %s", db.DB, db.driver, db.dsn)
+	return db.sqlDB.Close()
+}
+
+// Open opens a database connection and returns an sqlpro wrap handle
+func Open(driver, dsn string) (*DB, error) {
+
+	conn, err := sql.Open(driver, dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	// conn.SetMaxOpenConns(1)
+
+	err = conn.Ping()
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	wrapper := New(conn)
+
+	wrapper.sqlDB = conn
+
+	// wrapper.Debug = true
+
+	wrapper.dsn = dsn
+	wrapper.driver = driver
+
+	switch driver {
+	case "postgres":
+		wrapper.PlaceholderMode = DOLLAR
+		wrapper.UseReturningForLastId = true
+		wrapper.SupportsLastInsertId = false
+	case "sqlite3":
+	default:
+		return nil, xerrors.Errorf("sqlpro.Open: Unsupported driver '%s'.", driver)
+	}
+
+	log.Printf("sqlpro.Open: %p %s %s", wrapper.DB, driver, dsn)
+	return wrapper, nil
 }
