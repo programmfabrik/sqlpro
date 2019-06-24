@@ -426,7 +426,7 @@ func (db *DB) Close() error {
 	if db.sqlDB == nil {
 		panic("sqlpro.DB.Close: Unable to close, use Open to initialize the wrapper.")
 	}
-	log.Printf("sqlpro.Close: %p %s %s", db.DB, db.driver, db.dsn)
+	log.Printf("sqlpro.Close: %p %s %s", db.DB, db.Driver, db.DSN)
 	return db.sqlDB.Close()
 }
 
@@ -452,8 +452,8 @@ func Open(driver, dsn string) (*DB, error) {
 
 	// wrapper.Debug = true
 
-	wrapper.dsn = dsn
-	wrapper.driver = driver
+	wrapper.DSN = dsn
+	wrapper.Driver = driver
 
 	switch driver {
 	case "postgres":
@@ -468,3 +468,9 @@ func Open(driver, dsn string) (*DB, error) {
 	log.Printf("sqlpro.Open: %p %s %s", wrapper.DB, driver, dsn)
 	return wrapper, nil
 }
+
+// Open -> handle
+// handle.New -> NewConnection
+// handle.Wrap -> Wrap yourself
+// handle.Tx -> NewTransaction
+// handle.Prepare -> NewPrearedStatement

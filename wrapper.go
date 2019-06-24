@@ -23,7 +23,7 @@ type DB struct {
 	MaxPlaceholder        int
 	UseReturningForLastId bool
 	SupportsLastInsertId  bool
-	driver, dsn           string
+	Driver, DSN           string
 }
 
 type DebugLevel int
@@ -178,7 +178,7 @@ func debugError(err error) error {
 }
 
 func sqlError(err error, sqlS string, args []interface{}) error {
-	return xerrors.Errorf("Database Error: %s\n\n%s", err, sqlDebug(sqlS, args))
+	return xerrors.Errorf("Database Error: %s\n\n%sDatabase Error: %s", err, sqlDebug(sqlS, args), err)
 }
 
 func sqlDebug(sqlS string, args []interface{}) string {

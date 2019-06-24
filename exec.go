@@ -150,6 +150,7 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 
 	key_map := make(map[string]*fieldInfo, 0)
 	rows := make([]map[string]interface{}, 0)
+
 	for i := 0; i < rv.Len(); i++ {
 		row := reflect.Indirect(rv.Index(i)).Interface()
 		values, structInfo, err := db.valuesFromStruct(row)
@@ -164,39 +165,45 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 		}
 	}
 
-	insert := make([]string, 0)
+	insert := strings.Builder{} // make([]string, 0)
 	keys := make([]string, 0, len(key_map))
 	args := make([]interface{}, 0)
 
-	insert = append(insert, "INSERT INTO ", db.Esc(table), "(")
+	insert.WriteString("INSERT INTO ")
+	insert.WriteString(db.Esc(table))
+	insert.WriteRune('(')
+
 	idx := 0
 	for key := range key_map {
 		if idx > 0 {
-			insert = append(insert, ",")
+			insert.WriteRune(',')
 		}
-		insert = append(insert, db.Esc(key))
+		insert.WriteString(db.Esc(key))
 		keys = append(keys, key)
 		idx++
 	}
-	insert = append(insert, ") VALUES ")
+	insert.WriteString(") \nVALUES\n")
 
 	for idx, row := range rows {
 		if idx > 0 {
-			insert = append(insert, ",")
+			insert.WriteRune(',')
 		}
-		insert = append(insert, "(")
+		insert.WriteRune('(')
 		for idx2, key := range keys {
 			if idx2 > 0 {
-				insert = append(insert, ",")
+				insert.WriteRune(',')
 			}
 			value, _ := row[key]
 			args = append(args, db.nullValue(value, key_map[key]))
-			insert = append(insert, "?")
+			insert.WriteRune('?')
 		}
-		insert = append(insert, ")")
+		insert.WriteRune(')')
 	}
 
-	_, err = db.exec(int64(rv.Len()), strings.Join(insert, ""), args)
+	// db2 := *db
+	// db2.MaxPlaceholder = 0
+
+	_, err = db.exec(int64(rv.Len()), insert.String(), args...)
 	if err != nil {
 		return err
 	}
