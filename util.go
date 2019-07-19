@@ -135,6 +135,7 @@ type fieldInfo struct {
 	omitEmpty   bool
 	primaryKey  bool
 	null        bool
+	readOnly    bool
 	notNull     bool
 	isJson      bool
 	emptyValue  string
@@ -181,6 +182,7 @@ func getStructInfo(t reflect.Type) structInfo {
 			structField: field,
 			name:        field.Name,
 			omitEmpty:   false,
+			readOnly:    false,
 			primaryKey:  false,
 		}
 
@@ -219,6 +221,8 @@ func getStructInfo(t reflect.Type) structInfo {
 				info.notNull = true
 			case "json":
 				info.isJson = true
+			case "readonly":
+				info.readOnly = true
 			default:
 				// ignore unrecognized
 			}

@@ -3,7 +3,6 @@ package sqlpro
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"reflect"
 	"strings"
 
@@ -152,6 +151,10 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 	key_map := make(map[string]*fieldInfo, 0)
 	rows := make([]map[string]interface{}, 0)
 
+	if rv.Len() == 0 {
+		return nil
+	}
+
 	for i := 0; i < rv.Len(); i++ {
 		row := reflect.Indirect(rv.Index(i)).Interface()
 		values, structInfo, err := db.valuesFromStruct(row)
@@ -238,6 +241,7 @@ func (db *DB) insertStruct(table string, row interface{}) (int64, structInfo, er
 		}
 	}
 
+	// log.Printf("SQL: %s Debug: %v", sql, db.Debug)
 	insert_id, err := db.exec(1, sql, args...)
 	if err != nil {
 		return 0, nil, err
@@ -431,6 +435,10 @@ func (db *DB) valuesFromStruct(data interface{}) (map[string]interface{}, struct
 		isZero := isZero(actualData)
 
 		if isZero && fieldInfo.omitEmpty {
+			continue
+		}
+
+		if fieldInfo.readOnly {
 			continue
 		}
 
