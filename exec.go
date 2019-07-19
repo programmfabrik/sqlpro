@@ -3,6 +3,7 @@ package sqlpro
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"reflect"
 	"strings"
 
@@ -26,7 +27,7 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 	)
 
 	err := func() (reflect.Value, bool, error) {
-		return rv, false, fmt.Errorf("Insert/Update needs a slice of structs.")
+		return rv, false, fmt.Errorf("Insert/Update needs a struct or slice of structs.")
 	}
 
 	rv = reflect.Indirect(reflect.ValueOf(data))
@@ -89,7 +90,7 @@ func (db *DB) Insert(table string, data interface{}) error {
 				return err
 			}
 			pk := structInfo.onlyPrimaryKey()
-			if pk != nil {
+			if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
 				setPrimaryKey(row.FieldByName(pk.name), insert_id)
 			}
 		}
@@ -100,7 +101,7 @@ func (db *DB) Insert(table string, data interface{}) error {
 		}
 		pk := structInfo.onlyPrimaryKey()
 		// log.Printf("PK: %d", insert_id)
-		if pk != nil {
+		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
 			setPrimaryKey(rv.FieldByName(pk.name), insert_id)
 		}
 	}
@@ -224,7 +225,7 @@ func (db *DB) insertStruct(table string, row interface{}) (int64, structInfo, er
 
 	if db.UseReturningForLastId {
 		pk := info.onlyPrimaryKey()
-		if pk != nil {
+		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
 			sql = sql + " RETURNING " + db.Esc(pk.dbName)
 
 			var insert_id int64 = 0
@@ -456,5 +457,8 @@ func (db *DB) valuesFromStruct(data interface{}) (map[string]interface{}, struct
 
 // isZero returns true if given "x" equals Go's empty value.
 func isZero(x interface{}) bool {
+	if x == nil {
+		return true
+	}
 	return reflect.DeepEqual(x, reflect.Zero(reflect.TypeOf(x)).Interface())
 }
