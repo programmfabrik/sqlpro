@@ -15,6 +15,7 @@ import (
 type DB struct {
 	DB                    dbWrappable
 	sqlDB                 *sql.DB // this can be <nil>
+	sqlTx                 *sql.Tx // this can be <nil>
 	Debug                 bool
 	PlaceholderMode       PlaceholderMode
 	PlaceholderEscape     rune
