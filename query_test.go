@@ -120,7 +120,7 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	db = NewWrapper(dbWrap)
+	db = New(dbWrap)
 
 	exitCode := m.Run()
 	cleanup()
@@ -336,11 +336,11 @@ func TestQueryReal(t *testing.T) {
 func TestQuerySlice(t *testing.T) {
 	row := testRow{}
 	db.MaxPlaceholder = 1
-	err := db.Log().Query(&row, "SELECT * FROM test WHERE A IN ? LIMIT 1", []int64{1, 2, 3, 4, 5, 6, 7, 8})
+	err := db.Query(&row, "SELECT * FROM test WHERE A IN ? LIMIT 1", []int64{1, 2, 3, 4, 5, 6, 7, 8})
 	if err != nil {
 		t.Error(err)
 	}
-	err = db.Log().Query(&row, "SELECT * FROM test WHERE B IN ? LIMIT 1", []string{"henk", "horst", "torsten"})
+	err = db.Query(&row, "SELECT * FROM test WHERE B IN ? LIMIT 1", []string{"henk", "horst", "torsten"})
 	if err != nil {
 		t.Error(err)
 	}
@@ -527,6 +527,24 @@ func TestSave(t *testing.T) {
 	}
 
 	err = db.Save("test", &tr)
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestInterfaceSliceSave(t *testing.T) {
+	var (
+		tr  testRow
+		err error
+	)
+	tr = testRow{
+		B: "foo_save",
+	}
+
+	i := []interface{}{tr}
+
+	err = db.Save("test", &i)
 	if err != nil {
 		t.Error(err)
 	}
@@ -783,7 +801,7 @@ type ifcArr []interface{}
 
 func TestReplaceArgs(t *testing.T) {
 
-	db2 := NewWrapper(db.DB)
+	db2 := New(db.DB)
 
 	int_args := []int64{1, 3, 4, 5}
 	string_args := []string{"a", "b", "c"}

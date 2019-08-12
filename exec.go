@@ -38,9 +38,9 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 			if rv.Type().Elem().Elem().Kind() != reflect.Struct {
 				return err()
 			}
-		case reflect.Struct:
+		case reflect.Interface, reflect.Struct:
 		default:
-			return rv, false, fmt.Errorf("Insert/Update needs a slice of structs.")
+			return rv, false, fmt.Errorf("Insert/Update needs a slice of structs. Have: %s", rv.Type().Elem().Kind())
 		}
 	case reflect.Struct:
 		if !rv.CanAddr() {
