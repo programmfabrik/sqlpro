@@ -306,7 +306,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 
 		if isValue || driver.IsValue(arg) {
 			newArgs = append(newArgs, arg)
-			db.appendPlaceholder(&sb, len(newArgs))
+			db.appendPlaceholder(&sb, len(newArgs)-1)
 			continue
 		}
 
@@ -337,7 +337,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 					}
 				} else {
 					newArgs = append(newArgs, db.nullValue(item, fi))
-					db.appendPlaceholder(&sb, len(newArgs))
+					db.appendPlaceholder(&sb, len(newArgs)-1)
 				}
 			}
 			sb.WriteRune(')')
@@ -346,7 +346,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		}
 
 		newArgs = append(newArgs, arg)
-		db.appendPlaceholder(&sb, len(newArgs))
+		db.appendPlaceholder(&sb, len(newArgs)-1)
 
 	}
 
@@ -367,7 +367,22 @@ func (db *DB) appendPlaceholder(sb *strings.Builder, numArg int) {
 		sb.WriteRune('?')
 	case DOLLAR:
 		sb.WriteRune('$')
-		sb.WriteString(strconv.Itoa(numArg))
+		sb.WriteString(strconv.Itoa(numArg + 1))
+	}
+}
+
+func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
+	v0 := db.nullValue(value, fi)
+	if v0 == nil {
+		return "NULL"
+	}
+	switch v := v0.(type) {
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case string:
+		return v
+	default:
+		panic(fmt.Sprintf("EscValueForInsert failed: %T", value))
 	}
 }
 

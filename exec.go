@@ -131,7 +131,6 @@ func setPrimaryKey(rv reflect.Value, id int64) {
 // []struct
 //
 // sqlpro will executes one INSERT statement per call.
-
 func (db *DB) InsertBulk(table string, data interface{}) error {
 	var (
 		rv         reflect.Value
@@ -157,13 +156,14 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 
 	for i := 0; i < rv.Len(); i++ {
 		row := reflect.Indirect(rv.Index(i)).Interface()
+
 		values, structInfo, err := db.valuesFromStruct(row)
+
 		if err != nil {
 			return xerrors.Errorf("sqlpro.InsertBulk error: %w", err)
 		}
 
 		rows = append(rows, values)
-
 		for key := range values {
 			key_map[key] = structInfo[key]
 		}
@@ -171,11 +171,10 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 
 	insert := strings.Builder{} // make([]string, 0)
 	keys := make([]string, 0, len(key_map))
-	args := make([]interface{}, 0)
 
 	insert.WriteString("INSERT INTO ")
 	insert.WriteString(db.Esc(table))
-	insert.WriteRune('(')
+	insert.WriteString(" (")
 
 	idx := 0
 	for key := range key_map {
@@ -186,31 +185,46 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 		keys = append(keys, key)
 		idx++
 	}
-	insert.WriteString(") \nVALUES\n")
 
-	for idx, row := range rows {
-		if idx > 0 {
+	insert.WriteString(") VALUES ")
+	insert.WriteRune('(')
+	for idx2, key := range keys {
+		if idx2 > 0 {
 			insert.WriteRune(',')
 		}
-		insert.WriteRune('(')
-		for idx2, key := range keys {
-			if idx2 > 0 {
-				insert.WriteRune(',')
-			}
-			value, _ := row[key]
-			args = append(args, db.nullValue(value, key_map[key]))
-			insert.WriteRune('?')
-		}
-		insert.WriteRune(')')
+		// insert.WriteString(EscValueForInsert(value, key_map[key]))
+		db.appendPlaceholder(&insert, idx2)
 	}
+	insert.WriteRune(')')
 
-	// db2 := *db
-	// db2.MaxPlaceholder = 0
-
-	_, err = db.exec(int64(rv.Len()), insert.String(), args...)
+	tx, err := db.sqlDB.Begin()
 	if err != nil {
 		return err
 	}
+
+	stmt, err := tx.Prepare(insert.String())
+	if err != nil {
+		return sqlError(err, insert.String(), []interface{}{})
+	}
+	defer stmt.Close()
+
+	for _, row := range rows {
+		args := make([]interface{}, 0, len(key_map))
+		for _, key := range keys {
+			value, _ := row[key]
+			args = append(args, db.nullValue(value, key_map[key]))
+		}
+		_, err := stmt.Exec(args...)
+		if err != nil {
+			return sqlError(err, insert.String(), args)
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
