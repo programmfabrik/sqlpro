@@ -372,18 +372,54 @@ func (db *DB) appendPlaceholder(sb *strings.Builder, numArg int) {
 }
 
 func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
+	var s string
+
 	v0 := db.nullValue(value, fi)
 	if v0 == nil {
 		return "NULL"
 	}
 	switch v := v0.(type) {
+	case int:
+		return strconv.FormatInt(int64(v), 10)
 	case int64:
 		return strconv.FormatInt(v, 10)
+	case *int64:
+		return strconv.FormatInt(*v, 10)
+	case bool:
+		if v == false {
+			return "FALSE"
+		} else {
+			return "TRUE"
+		}
+	case *bool:
+		if *v == false {
+			return "FALSE"
+		} else {
+			return "TRUE"
+		}
+	case []uint8:
+		s = string(v)
+	case json.RawMessage:
+		s = string(v)
 	case string:
-		return v
+		s = v
+	case *string:
+		s = *v
+	case time.Time:
+		s = v.Format(time.RFC3339Nano)
 	default:
-		panic(fmt.Sprintf("EscValueForInsert failed: %T", value))
+		if vr, ok := v.(driver.Valuer); ok {
+			v2, _ := vr.Value()
+			return db.EscValueForInsert(v2, fi)
+		}
+		sv := reflect.ValueOf(value)
+		switch sv.Kind() {
+		case reflect.Int:
+			return strconv.FormatInt(sv.Int(), 10)
+		}
+		panic(fmt.Sprintf("EscValueForInsert failed: %T, using Sprintf %%s\n", value))
 	}
+	return db.EscValue(s)
 }
 
 // nullValue returns the escaped value suitable for UPDATE & INSERT

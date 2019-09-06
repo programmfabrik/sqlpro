@@ -187,42 +187,24 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 	}
 
 	insert.WriteString(") VALUES ")
-	insert.WriteRune('(')
-	for idx2, key := range keys {
-		if idx2 > 0 {
+
+	for idx, row := range rows {
+		if idx > 0 {
 			insert.WriteRune(',')
 		}
-		// insert.WriteString(EscValueForInsert(value, key_map[key]))
-		db.appendPlaceholder(&insert, idx2)
+		insert.WriteRune('(')
+		for idx2, key := range keys {
+			if idx2 > 0 {
+				insert.WriteRune(',')
+			}
+			insert.WriteString(db.EscValueForInsert(row[key], key_map[key]))
+		}
+		insert.WriteRune(')')
 	}
-	insert.WriteRune(')')
 
-	tx, err := db.sqlDB.Begin()
-	if err != nil {
-		return err
-	}
-
-	stmt, err := tx.Prepare(insert.String())
+	_, err = db.sqlDB.Exec(insert.String())
 	if err != nil {
 		return sqlError(err, insert.String(), []interface{}{})
-	}
-	defer stmt.Close()
-
-	for _, row := range rows {
-		args := make([]interface{}, 0, len(key_map))
-		for _, key := range keys {
-			value, _ := row[key]
-			args = append(args, db.nullValue(value, key_map[key]))
-		}
-		_, err := stmt.Exec(args...)
-		if err != nil {
-			return sqlError(err, insert.String(), args)
-		}
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		return err
 	}
 
 	return nil
