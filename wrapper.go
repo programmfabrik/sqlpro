@@ -183,6 +183,9 @@ func sqlError(err error, sqlS string, args []interface{}) error {
 }
 
 func sqlDebug(sqlS string, args []interface{}) string {
+	if len(sqlS) > 1000 {
+		return fmt.Sprintf("SQL:\n %s \nARGS:\n%v\n", sqlS[0:1000], argsToString(args...))
+	}
 	return fmt.Sprintf("SQL:\n %s \nARGS:\n%v\n", sqlS, argsToString(args...))
 }
 
