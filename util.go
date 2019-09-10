@@ -416,8 +416,11 @@ func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
 		switch sv.Kind() {
 		case reflect.Int:
 			return strconv.FormatInt(sv.Int(), 10)
+		case reflect.String:
+			s = sv.String()
+		default:
+			panic(fmt.Sprintf("EscValueForInsert failed: %T, underlying type: %s", value, sv.Kind()))
 		}
-		panic(fmt.Sprintf("EscValueForInsert failed: %T, using Sprintf %%s\n", value))
 	}
 	return db.EscValue(s)
 }
