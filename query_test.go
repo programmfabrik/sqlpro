@@ -542,7 +542,7 @@ func TestInterfaceSliceSave(t *testing.T) {
 		B: "foo_save",
 	}
 
-	i := []interface{}{tr}
+	i := []interface{}{&tr}
 
 	err = db.Save("test", &i)
 	if err != nil {

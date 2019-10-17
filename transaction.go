@@ -1,6 +1,6 @@
 package sqlpro
 
-// Begin starts a new connection, this panics if
+// Begin starts a new transaction, this panics if
 // the wrapper was not initialized using "Open"
 func (db *DB) Begin() (*DB, error) {
 	var (
@@ -13,6 +13,7 @@ func (db *DB) Begin() (*DB, error) {
 	if db.sqlTx != nil {
 		panic("sqlpro.DB.Begin: Unable to call Begin on a Transaction.")
 	}
+
 	db2 := *db
 	db2.sqlTx, err = db.sqlDB.Begin()
 	if err != nil {

@@ -203,7 +203,7 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 		insert.WriteRune(')')
 	}
 
-	_, err = db.sqlDB.Exec(insert.String())
+	_, err = db.DB.Exec(insert.String())
 	if err != nil {
 		return sqlError(err, insert.String(), []interface{}{})
 	}
