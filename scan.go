@@ -3,6 +3,7 @@ package sqlpro
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
@@ -331,6 +332,12 @@ func Scan(target interface{}, rows *sql.Rows) error {
 		}
 
 		targetValue.Set(reflect.Append(targetValue, rowValue))
+	}
+
+	if rowMode {
+		// If we get here with row mode, it means we have nothing found
+		// return an error
+		return errors.New("sqlpro: Query returns 0 rows.")
 	}
 
 	return nil

@@ -5,7 +5,6 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-	"log"
 	"reflect"
 	"strconv"
 	"strings"
@@ -484,7 +483,7 @@ func (db *DB) Close() error {
 	if db.sqlDB == nil {
 		panic("sqlpro.DB.Close: Unable to close, use Open to initialize the wrapper.")
 	}
-	log.Printf("sqlpro.Close: %p %s %s", db.DB, db.Driver, db.DSN)
+	// log.Printf("sqlpro.Close: %p %s %s", db.DB, db.Driver, db.DSN)
 	return db.sqlDB.Close()
 }
 
@@ -523,7 +522,7 @@ func Open(driver, dsn string) (*DB, error) {
 		return nil, xerrors.Errorf("sqlpro.Open: Unsupported driver '%s'.", driver)
 	}
 
-	log.Printf("sqlpro.Open: %p %s %s", wrapper.DB, driver, dsn)
+	// log.Printf("sqlpro.Open: %p %s %s", wrapper.DB, driver, dsn)
 	return wrapper, nil
 }
 
