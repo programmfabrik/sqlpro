@@ -219,11 +219,10 @@ func TestInsertStructPtr(t *testing.T) {
 	}
 }
 func TestInsertStruct(t *testing.T) {
-
 	tr := testRow{B: "foo3"}
 	err := db.Insert("test", tr)
-	if err == nil {
-		t.Error("Insert must not accept struct.")
+	if err != nil {
+		t.Error(err)
 	}
 }
 
@@ -542,6 +541,24 @@ func TestInterfaceSliceSave(t *testing.T) {
 		B: "foo_save",
 	}
 
+	i := []interface{}{tr}
+
+	err = db.Save("test", &i)
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestInterfaceSlicePointerSave(t *testing.T) {
+	var (
+		tr  testRow
+		err error
+	)
+	tr = testRow{
+		B: "foo_save",
+	}
+
 	i := []interface{}{&tr}
 
 	err = db.Save("test", &i)
@@ -599,7 +616,7 @@ func TestDelete(t *testing.T) {
 	}
 }
 
-func TestQueryIntSlice(t *testing.T) {
+func _TestQueryIntSlice(t *testing.T) {
 	var dummy int64
 
 	err := db.Query(&dummy, "SELECT * FROM test WHERE a IN ?", []int64{-1, -2, -3})
