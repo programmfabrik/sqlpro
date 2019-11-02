@@ -12,7 +12,7 @@ import (
 
 // checkData checks that the given data is either one of:
 //
-// *[]*strcut
+// *[]*struct
 // *[]struct
 // []*struct
 // []struct
@@ -26,30 +26,27 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 		structMode bool
 	)
 
-	err := func() (reflect.Value, bool, error) {
-		return rv, false, fmt.Errorf("Insert/Update needs a struct or slice of structs.")
+	err := func(kind reflect.Kind) (reflect.Value, bool, error) {
+		return rv, false, fmt.Errorf("Insert/Update needs a struct or slice of structs. given %v", kind)
 	}
 
 	rv = reflect.Indirect(reflect.ValueOf(data))
 
 	switch rv.Type().Kind() {
-	case reflect.Slice:
+	case reflect.Slice, reflect.Array:
 		switch rv.Type().Elem().Kind() {
 		case reflect.Ptr:
 			if rv.Type().Elem().Elem().Kind() != reflect.Struct {
-				return err()
+				return err(rv.Type().Elem().Elem().Kind())
 			}
 		case reflect.Interface, reflect.Struct:
 		default:
-			return rv, false, fmt.Errorf("Insert/Update needs a slice of structs. Have: %s", rv.Type().Elem().Kind())
+			return err(rv.Type().Elem().Kind())
 		}
 	case reflect.Struct:
-		if !rv.CanAddr() {
-			return err()
-		}
 		structMode = true
 	default:
-		return err()
+		return err(rv.Type().Kind())
 	}
 
 	return rv, structMode, nil
@@ -59,7 +56,7 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 // the record in the DB.
 // The given data needs to be:
 //
-// *[]*strcut
+// *[]*struct
 // *[]struct
 // []*struct
 // []struct
@@ -82,35 +79,37 @@ func (db *DB) Insert(table string, data interface{}) error {
 		return err
 	}
 
-	if !structMode {
-		for i := 0; i < rv.Len(); i++ {
-			row := reflect.Indirect(rv.Index(i))
-			insert_id, structInfo, err := db.insertStruct(table, row.Interface())
-			if err != nil {
-				return err
-			}
-			pk := structInfo.onlyPrimaryKey()
-			if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
-				setPrimaryKey(row.FieldByName(pk.name), insert_id)
-			}
-		}
-	} else {
-		insert_id, structInfo, err := db.insertStruct(table, rv.Interface())
+	insert := func(val reflect.Value) error {
+		insert_id, structInfo, err := db.insertStruct(table, val.Interface())
 		if err != nil {
 			return err
 		}
 		pk := structInfo.onlyPrimaryKey()
-		// log.Printf("PK: %d", insert_id)
 		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
-			setPrimaryKey(rv.FieldByName(pk.name), insert_id)
+			setPrimaryKey(val.FieldByName(pk.name), insert_id)
 		}
+		return nil
 	}
 
+	if structMode {
+		return insert(rv)
+	}
+
+	for i := 0; i < rv.Len(); i++ {
+		row := reflect.Indirect(rv.Index(i))
+		err = insert(row)
+		if err != nil {
+			return err
+		}
+	}
 	// data
 	return nil
 }
 
 func setPrimaryKey(rv reflect.Value, id int64) {
+	if !rv.CanAddr() {
+		return
+	}
 	switch rv.Type().Kind() {
 	case reflect.Int64:
 		rv.SetInt(id)
@@ -126,57 +125,50 @@ func setPrimaryKey(rv reflect.Value, id int64) {
 // the record in the DB with one Exec.
 // The given data needs to be:
 //
-// *[]*strcut
+// *[]*struct
 // *[]struct
 // []*struct
 // []struct
 //
 // sqlpro will executes one INSERT statement per call.
 func (db *DB) InsertBulk(table string, data interface{}) error {
-	var (
-		rv         reflect.Value
-		structMode bool
-		err        error
-	)
-
-	rv, structMode, err = checkData(data)
-	if err != nil {
+	rv, structMode, err := checkData(data)
+	switch {
+	case err != nil:
 		return err
-	}
-
-	if structMode {
+	// i don't know if we really want to fail silently
+	// returning back an error will probably be a good thing
+	// for the user
+	case rv.Len() == 0:
+		return nil
+	case structMode:
 		return fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
 	}
 
-	key_map := make(map[string]*fieldInfo, 0)
-	rows := make([]map[string]interface{}, 0)
+	key_map := make(map[string]*fieldInfo)
+	rows := make([]map[string]interface{}, rv.Len())
 
-	if rv.Len() == 0 {
-		return nil
-	}
-
-	for i := 0; i < rv.Len(); i++ {
+	for i := range rows {
 		row := reflect.Indirect(rv.Index(i)).Interface()
-
 		values, structInfo, err := db.valuesFromStruct(row)
 
 		if err != nil {
 			return xerrors.Errorf("sqlpro.InsertBulk error: %w", err)
 		}
 
-		rows = append(rows, values)
+		rows[i] = values
 		for key := range values {
 			key_map[key] = structInfo[key]
 		}
 	}
 
-	insert := strings.Builder{} // make([]string, 0)
-	keys := make([]string, 0, len(key_map))
+	var insert strings.Builder // make([]string, 0)
 
 	insert.WriteString("INSERT INTO ")
 	insert.WriteString(db.Esc(table))
 	insert.WriteString(" (")
 
+	keys := make([]string, 0, len(key_map))
 	idx := 0
 	for key := range key_map {
 		if idx > 0 {

@@ -219,38 +219,57 @@ func TestInsertStructPtr(t *testing.T) {
 	}
 }
 func TestInsertStruct(t *testing.T) {
-
 	tr := testRow{B: "foo3"}
 	err := db.Insert("test", tr)
-	if err == nil {
-		t.Error("Insert must not accept struct.")
+	if err != nil {
+		t.Errorf("Insert must accept struct: err: %v\n", err)
 	}
 }
 
 func TestUpdate(t *testing.T) {
-	tr := &testRow{
+	tr := testRow{
 		A: 1,
 		B: "foo",
 	}
-	err := db.Update("test", tr)
+	err := db.Update("test", &tr)
+	if err != nil {
+		t.Error(err)
+	}
+	err = db.Update("test", tr)
 	if err != nil {
 		t.Error(err)
 	}
 }
 
 func TestUpdateMany(t *testing.T) {
-	trs := []*testRow{
-		&testRow{
+	trsp := []*testRow{
+		{
 			A: 1,
 			B: "foo",
 		},
-		&testRow{
+		{
 			A: 3,
 			B: "torsten2",
 		},
 	}
 
-	err := db.Update("test", trs)
+	err := db.Update("test", trsp)
+	if err != nil {
+		t.Error(err)
+	}
+
+	trs := []testRow{
+		{
+			A: 1,
+			B: "foo",
+		},
+		{
+			A: 3,
+			B: "torsten2",
+		},
+	}
+
+	err = db.Update("test", trs)
 	if err != nil {
 		t.Error(err)
 	}
@@ -576,14 +595,14 @@ func TestInsertMany(t *testing.T) {
 	}
 }
 
-func ATestInsertBulk(t *testing.T) {
-	rows := make([]*testRow, 0)
-	for i := 0; i < 1000; i++ {
-		tr := &testRow{
+func TestInsertBulk(t *testing.T) {
+	var rows [1000]*testRow
+
+	for i := range rows {
+		rows[i] = &testRow{
 			B: fmt.Sprintf("row %d", i+1),
 			D: float64(i + 1),
 		}
-		rows = append(rows, tr)
 	}
 
 	err := db.InsertBulk("test", rows)
