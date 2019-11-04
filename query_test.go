@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -603,8 +604,11 @@ func TestQueryIntSlice(t *testing.T) {
 	var dummy int64
 
 	err := db.Query(&dummy, "SELECT * FROM test WHERE a IN ?", []int64{-1, -2, -3})
-	if err != nil {
-		t.Error(err)
+	if err == nil {
+		t.Errorf("Expected ErrQueryReturnedZeroRows.")
+	}
+	if !errors.Is(err, ErrQueryReturnedZeroRows) {
+		t.Errorf("Expected ErrQueryReturnedZeroRows, got: %w", err)
 	}
 }
 
