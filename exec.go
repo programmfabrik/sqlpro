@@ -88,7 +88,9 @@ func (db *DB) Insert(table string, data interface{}) error {
 			}
 			pk := structInfo.onlyPrimaryKey()
 			if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
-				setPrimaryKey(row.FieldByName(pk.name), insert_id)
+				if entry := row.FieldByName(pk.name); entry.CanAddr() {
+					setPrimaryKey(entry, insert_id)
+				}
 			}
 		}
 	} else {
@@ -99,7 +101,9 @@ func (db *DB) Insert(table string, data interface{}) error {
 		pk := structInfo.onlyPrimaryKey()
 		// log.Printf("PK: %d", insert_id)
 		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
-			setPrimaryKey(rv.FieldByName(pk.name), insert_id)
+			if entry := rv.FieldByName(pk.name); entry.CanAddr() {
+				setPrimaryKey(entry, insert_id)
+			}
 		}
 	}
 
@@ -108,9 +112,6 @@ func (db *DB) Insert(table string, data interface{}) error {
 }
 
 func setPrimaryKey(rv reflect.Value, id int64) {
-	if !rv.CanAddr() {
-		return
-	}
 	switch rv.Type().Kind() {
 	case reflect.Int64:
 		rv.SetInt(id)
