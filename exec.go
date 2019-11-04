@@ -107,9 +107,6 @@ func (db *DB) Insert(table string, data interface{}) error {
 }
 
 func setPrimaryKey(rv reflect.Value, id int64) {
-	if !rv.CanAddr() {
-		return
-	}
 	switch rv.Type().Kind() {
 	case reflect.Int64:
 		rv.SetInt(id)
