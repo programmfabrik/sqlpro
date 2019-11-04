@@ -334,7 +334,7 @@ func TestQueryReal(t *testing.T) {
 
 }
 
-func TestQuerySlice(t *testing.T) {
+func TestQueryStruct(t *testing.T) {
 	row := testRow{}
 	db.MaxPlaceholder = 1
 	err := db.Query(&row, "SELECT * FROM test WHERE A IN ? LIMIT 1", []int64{1, 2, 3, 4, 5, 6, 7, 8})
@@ -346,6 +346,19 @@ func TestQuerySlice(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestQueryStruct2(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Errorf("Expected a panic.")
+		}
+	}()
+
+	row := testRow{}
+	db.Query(row, "SELECT * FROM test WHERE A IN ? LIMIT 1", []int64{1, 2, 3, 4, 5, 6, 7, 8})
+}
+
 func TestStandard(t *testing.T) {
 	var (
 		err   error
@@ -600,7 +613,7 @@ func TestDelete(t *testing.T) {
 	}
 }
 
-func TestQueryIntSlice(t *testing.T) {
+func TestQueryIntStruct(t *testing.T) {
 	var dummy int64
 
 	err := db.Query(&dummy, "SELECT * FROM test WHERE a IN ?", []int64{-1, -2, -3})
@@ -609,6 +622,18 @@ func TestQueryIntSlice(t *testing.T) {
 	}
 	if !errors.Is(err, ErrQueryReturnedZeroRows) {
 		t.Errorf("Expected ErrQueryReturnedZeroRows, got: %w", err)
+	}
+}
+
+func TestQueryIntSlice(t *testing.T) {
+	var dummy []int64
+
+	err := db.Query(&dummy, "SELECT * FROM test WHERE a IN ?", []int64{-1, -2, -3})
+	if err != nil {
+		t.Error(err)
+	}
+	if len(dummy) != 0 {
+		t.Errorf("int slice must not contain entries.")
 	}
 }
 
