@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"unsafe"
 
 	"github.com/lib/pq"
 	"golang.org/x/xerrors"
@@ -456,20 +457,16 @@ func (db *DB) Save(table string, data interface{}) error {
 	} else {
 		for i := 0; i < rv.Len(); i++ {
 
-			if rv.Index(i).Elem().Type().Kind() == reflect.Struct {
+			if rv.Index(i).Elem().Type().Kind() == reflect.Struct && rv.Index(i).Type().Kind() == reflect.Interface {
 
-				copy := reflect.New(rv.Index(i).Elem().Type())
-				copy.Elem().Set(rv.Index(i).Elem())
-
-				err = db.saveRow(table, copy.Interface())
+				var intfData [2]uintptr = rv.Index(i).InterfaceData()
+				ref := reflect.NewAt(rv.Index(i).Elem().Type(), unsafe.Pointer(intfData[1]))
+				err = db.saveRow(table, ref.Interface())
 				if err != nil {
 					return err
 				}
 
-				// addressability continuation hack: assign the copy to index i so that the changes will persist
-				rv.Index(i).Set(copy)
 			} else {
-
 				err = db.saveRow(table, rv.Index(i).Interface())
 				if err != nil {
 					return err
