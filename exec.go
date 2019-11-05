@@ -456,9 +456,9 @@ func (db *DB) Save(table string, data interface{}) error {
 	} else {
 		for i := 0; i < rv.Len(); i++ {
 
-			if rv.Index(0).Elem().Type().Kind() == reflect.Struct {
+			if rv.Index(i).Elem().Type().Kind() == reflect.Struct {
 
-				copy := reflect.New(rv.Index(0).Elem().Type())
+				copy := reflect.New(rv.Index(i).Elem().Type())
 				copy.Elem().Set(rv.Index(i).Elem())
 
 				err = db.saveRow(table, copy.Interface())
