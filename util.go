@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -12,6 +13,8 @@ import (
 
 	"golang.org/x/xerrors"
 )
+
+var ErrQueryReturnedZeroRows error = errors.New("Query returned 0 rows.")
 
 // structInfo is a map to fieldInfo by db_name
 type structInfo map[string]*fieldInfo
