@@ -155,7 +155,7 @@ func TestInsertSliceStructPtr(t *testing.T) {
 		},
 	}
 
-	err = db.Insert("test", data)
+	_, err = db.Insert("test", data)
 	if err != nil {
 		t.Error(err)
 	}
@@ -194,7 +194,7 @@ func TestInsertSliceStruct(t *testing.T) {
 	}
 
 	// db.DebugNext = true
-	err := db.Insert("test", data)
+	_, err := db.Insert("test", data)
 	if err != nil {
 		t.Error(err)
 	}
@@ -210,7 +210,7 @@ func TestInsertStructPtr(t *testing.T) {
 
 	tr := testRow{B: "foo2"}
 
-	err := db.Insert("test", &tr)
+	_, err := db.Insert("test", &tr)
 	if err != nil {
 		t.Error(err)
 	}
@@ -220,7 +220,7 @@ func TestInsertStructPtr(t *testing.T) {
 }
 func TestInsertStruct(t *testing.T) {
 	tr := testRow{B: "foo3"}
-	err := db.Insert("test", tr)
+	_, err := db.Insert("test", tr)
 	if err != nil {
 		t.Error(err)
 	}
@@ -586,7 +586,7 @@ func TestInsertMany(t *testing.T) {
 			B: fmt.Sprintf("row %d", i+1),
 			D: float64(i + 1),
 		}
-		err := db.Insert("test", &tr)
+		_, err := db.Insert("test", &tr)
 		if err != nil {
 			t.Error(err)
 		}
@@ -687,7 +687,7 @@ func TestJson(t *testing.T) {
 	jt := "JsonTest"
 
 	tr = testRowJson{B: jt, F: myStruct{A: "JsonTest", B: "Torsten"}}
-	err = db.Insert("test", &tr)
+	_, err = db.Insert("test", &tr)
 	if err != nil {
 		t.Error(err)
 	}
@@ -733,14 +733,14 @@ func TestUint8(t *testing.T) {
 	)
 
 	tr = testRowUint8{F: json.RawMessage([]byte("Torsten"))}
-	err = db.Insert("test", &tr)
+	_, err = db.Insert("test", &tr)
 	if err != nil {
 		t.Error(err)
 	}
 
 	tr2 = testRowUint8{}
 
-	err = db.Insert("test", &tr2)
+	_, err = db.Insert("test", &tr2)
 	if err != nil {
 		t.Error(err)
 	}
@@ -774,14 +774,14 @@ func TestUint8Ptr(t *testing.T) {
 	rm := json.RawMessage([]byte("Torsten"))
 
 	tr = testRowUint8Ptr{F: &rm}
-	err = db.Insert("test", &tr)
+	_, err = db.Insert("test", &tr)
 	if err != nil {
 		t.Error(err)
 	}
 
 	tr2 = testRowUint8Ptr{}
 
-	err = db.Insert("test", &tr2)
+	_, err = db.Insert("test", &tr2)
 	if err != nil {
 		t.Error(err)
 	}

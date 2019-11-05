@@ -52,61 +52,6 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 	return rv, structMode, nil
 }
 
-// Insert takes a table name and a struct and inserts
-// the record in the DB.
-// The given data needs to be:
-//
-// *[]*strcut
-// *[]struct
-// []*struct
-// []struct
-// struct
-// *struct
-//
-// sqlpro will executes one INSERT statement per row.
-// result.LastInsertId will be used to set the first primary
-// key column.
-
-func (db *DB) Insert(table string, data interface{}) error {
-	var (
-		rv         reflect.Value
-		structMode bool
-		err        error
-	)
-
-	rv, structMode, err = checkData(data)
-	if err != nil {
-		return err
-	}
-
-	if !structMode {
-		for i := 0; i < rv.Len(); i++ {
-			row := reflect.Indirect(rv.Index(i))
-			insert_id, structInfo, err := db.insertStruct(table, row.Interface())
-			if err != nil {
-				return err
-			}
-			pk := structInfo.onlyPrimaryKey()
-			if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
-				setPrimaryKey(row.FieldByName(pk.name), insert_id)
-			}
-		}
-	} else {
-		insert_id, structInfo, err := db.insertStruct(table, rv.Interface())
-		if err != nil {
-			return err
-		}
-		pk := structInfo.onlyPrimaryKey()
-		// log.Printf("PK: %d", insert_id)
-		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
-			setPrimaryKey(rv.FieldByName(pk.name), insert_id)
-		}
-	}
-
-	// data
-	return nil
-}
-
 func setPrimaryKey(rv reflect.Value, id int64) {
 	if !rv.CanAddr() {
 		return
@@ -480,7 +425,9 @@ func (db *DB) saveRow(table string, data interface{}) error {
 
 	pk_value, ok := values[pk.dbName]
 	if !ok || isZero(pk_value) {
-		return db.Insert(table, data)
+		// TODO: Return data and error
+		_, err = db.Insert(table, data)
+		return err
 	} else {
 		return db.Update(table, data)
 	}
