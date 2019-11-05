@@ -565,6 +565,24 @@ func TestInterfaceSliceSave(t *testing.T) {
 
 }
 
+func TestInterfaceSliceSave2(t *testing.T) {
+	var (
+		tr  testRow
+		err error
+	)
+	tr = testRow{
+		B: "foo_save",
+	}
+
+	i := []interface{}{tr}
+
+	err = db.Save("test", &i)
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
 func TestSliceString(t *testing.T) {
 	var (
 		s   [][]string

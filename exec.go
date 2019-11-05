@@ -455,10 +455,17 @@ func (db *DB) Save(table string, data interface{}) error {
 		return db.saveRow(table, data)
 	} else {
 		for i := 0; i < rv.Len(); i++ {
-			err = db.saveRow(table, rv.Index(i).Interface())
+
+			copy := reflect.New(rv.Index(0).Elem().Type())
+			copy.Elem().Set(rv.Index(i).Elem())
+
+			err = db.saveRow(table, copy.Interface())
 			if err != nil {
 				return err
 			}
+
+			// to "continue" addressability hack
+			rv.Index(i).Set(copy)
 		}
 	}
 
