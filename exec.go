@@ -466,7 +466,7 @@ func (db *DB) Save(table string, data interface{}) error {
 					return err
 				}
 
-				// addressability hack: assign the copy to index i so that the changes will persist
+				// addressability continuation hack: assign the copy to index i so that the changes will persist
 				rv.Index(i).Set(copy)
 			} else {
 
