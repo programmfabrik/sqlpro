@@ -233,201 +233,48 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 	return nil
 }
 
-func (db *DB) insertStruct(table string, row interface{}) (int64, structInfo, error) {
-
-	values, info, err := db.valuesFromStruct(row)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	sql, args, err := db.insertClauseFromValues(table, values, info)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	if db.UseReturningForLastId {
-		pk := info.onlyPrimaryKey()
-		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
-			sql = sql + " RETURNING " + db.Esc(pk.dbName)
-
-			var insert_id int64 = 0
-			err := db.Query(&insert_id, sql, args...)
-			if err != nil {
-				return 0, nil, err
-			}
-			// log.Printf("Returning ID: %d", insert_id)
-			return insert_id, info, nil
-		}
-	}
-
-	// log.Printf("SQL: %s Debug: %v", sql, db.Debug)
-	insert_id, err := db.exec(1, sql, args...)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	return insert_id, info, nil
-}
-
-func (db *DB) insertClauseFromValues(table string, values map[string]interface{}, info structInfo) (string, []interface{}, error) {
-	cols := make([]string, 0, len(values))
-	vs := make([]string, 0, len(values))
-	args := make([]interface{}, 0, len(values))
-
-	for col, value := range values {
-		cols = append(cols, db.Esc(col))
-		vs = append(vs, "?")
-		args = append(args, db.nullValue(value, info[col]))
-	}
-	return fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)",
-		db.Esc(table),
-		strings.Join(cols, ","),
-		strings.Join(vs, ","),
-	), args, nil
-}
-
-func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []interface{}, error) {
-
-	var (
-		valid    bool
-		args     []interface{}
-		pk_value interface{}
-	)
-
-	values, structInfo, err := db.valuesFromStruct(row)
-	if err != nil {
-		return "", nil, err
-	}
-
-	update := strings.Builder{}
-	where := strings.Builder{}
-
-	update.WriteString("UPDATE ")
-	update.WriteString(db.Esc(table))
-	update.WriteString(" SET ")
-
-	where.WriteString(" WHERE ")
-
-	idx := 0
-	for key, value := range values {
-		if structInfo.primaryKey(key) {
-			// skip primary keys for update
-			pk_value = db.nullValue(value, structInfo[key])
-			if pk_value == nil {
-				return "", args, fmt.Errorf("Unable to build UPDATE clause with <nil> key: %s", key)
-			}
-			where.WriteString(db.Esc(key))
-			where.WriteString("=")
-			where.WriteRune(db.PlaceholderValue)
-			valid = true
-		} else {
-			if idx > 0 {
-				update.WriteString(",")
-			}
-			update.WriteString(db.Esc(key))
-			update.WriteString("=")
-			update.WriteRune(db.PlaceholderValue)
-			args = append(args, db.nullValue(value, structInfo[key]))
-			idx++
-		}
-	}
-
-	if !valid {
-		return "", args, fmt.Errorf("Unable to build UPDATE clause, at least one key needed.")
-	}
-
-	args = append(args, pk_value)
-
-	// Add where clause
-	return update.String() + where.String(), args, nil
-}
-
-// Update updates the given struct or slice of structs
-// The WHERE clause is put together from the "pk" columns.
-// If not all "pk" columns have non empty values, Update returns
-// an error.
-func (db *DB) Update(table string, data interface{}) error {
-	var (
-		rv         reflect.Value
-		structMode bool
-		err        error
-		update     string
-		args       []interface{}
-	)
-
-	rv, structMode, err = checkData(data)
-	if err != nil {
-		return err
-	}
-
-	if structMode {
-		update, args, err = db.updateClauseFromRow(table, rv.Interface())
-		if err != nil {
-			return err
-		}
-		_, err = db.exec(1, update, args...)
-		if err != nil {
-			return err
-		}
-	} else {
-		for i := 0; i < rv.Len(); i++ {
-			row := reflect.Indirect(rv.Index(i))
-			update, args, err = db.updateClauseFromRow(table, row.Interface())
-			if err != nil {
-				return err
-			}
-			_, err = db.exec(1, update, args...)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
 // Save saves the given data. It performs an INSERT if the only
 // primary key is zero, and and UPDATE if it is not. It panics
 // if it the record has no primary key or less than one
-func (db *DB) Save(table string, data interface{}) error {
+func (db *DB) Save(table string, data interface{}) (interface{}, error) {
 
 	rv, structMode, err := checkData(data)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if structMode {
 		return db.saveRow(table, data)
 	} else {
 		for i := 0; i < rv.Len(); i++ {
-			err = db.saveRow(table, rv.Index(i).Interface())
+			_, err = db.saveRow(table, rv.Index(i).Interface())
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 
-	return nil
+	// TODO: Return data here
+	return nil, nil
 }
 
-func (db *DB) saveRow(table string, data interface{}) error {
+func (db *DB) saveRow(table string, data interface{}) (interface{}, error) {
 	row := reflect.Indirect(reflect.ValueOf(data))
 
 	values, info, err := db.valuesFromStruct(row.Interface())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	pk := info.onlyPrimaryKey()
 
 	if pk == nil {
-		return fmt.Errorf("Save needs a struct with exactly one 'pk' field.")
+		return nil, fmt.Errorf("Save needs a struct with exactly one 'pk' field.")
 	}
 
 	pk_value, ok := values[pk.dbName]
 	if !ok || isZero(pk_value) {
 		// TODO: Return data and error
-		_, err = db.Insert(table, data)
-		return err
+		return db.Insert(table, data)
 	} else {
 		return db.Update(table, data)
 	}

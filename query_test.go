@@ -231,7 +231,7 @@ func TestUpdate(t *testing.T) {
 		A: 1,
 		B: "foo",
 	}
-	err := db.Update("test", tr)
+	_, err := db.Update("test", tr)
 	if err != nil {
 		t.Error(err)
 	}
@@ -249,7 +249,7 @@ func TestUpdateMany(t *testing.T) {
 		},
 	}
 
-	err := db.Update("test", trs)
+	_, err := db.Update("test", trs)
 	if err != nil {
 		t.Error(err)
 	}
@@ -266,7 +266,7 @@ func TestSaveMany(t *testing.T) {
 		},
 	}
 
-	err := db.Save("test", trs)
+	_, err := db.Save("test", trs)
 	if err != nil {
 		t.Error(err)
 	}
@@ -520,12 +520,12 @@ func TestSave(t *testing.T) {
 		B: "foo_save",
 	}
 
-	err = db.Save("test", &tr)
+	_, err = db.Save("test", &tr)
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = db.Save("test", &tr)
+	_, err = db.Save("test", &tr)
 	if err != nil {
 		t.Error(err)
 	}
@@ -543,7 +543,7 @@ func TestInterfaceSliceSave(t *testing.T) {
 
 	i := []interface{}{tr}
 
-	err = db.Save("test", &i)
+	_, err = db.Save("test", &i)
 	if err != nil {
 		t.Error(err)
 	}
@@ -561,7 +561,7 @@ func TestInterfaceSlicePointerSave(t *testing.T) {
 
 	i := []interface{}{&tr}
 
-	err = db.Save("test", &i)
+	_, err = db.Save("test", &i)
 	if err != nil {
 		t.Error(err)
 	}
@@ -692,19 +692,19 @@ func TestJson(t *testing.T) {
 		t.Error(err)
 	}
 	tr.F.B = "Torsten2"
-	err = db.Update("test", &tr)
+	_, err = db.Update("test", &tr)
 	if err != nil {
 		t.Error(err)
 	}
 
 	trPtr = testRowJsonPtr{B: &jt, F: &myStruct{A: "JsonTest", B: "Tom"}}
-	err = db.Save("test", &trPtr)
+	_, err = db.Save("test", &trPtr)
 	if err != nil {
 		t.Error(err)
 	}
 
 	trPtr2 = testRowJsonPtr{B: &jt, F: nil}
-	err = db.Save("test", &trPtr2)
+	_, err = db.Save("test", &trPtr2)
 	if err != nil {
 		t.Error(err)
 	}

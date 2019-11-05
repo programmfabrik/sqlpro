@@ -30,13 +30,13 @@ func (db *DB) Insert(table string, data interface{}) (interface{}, error) {
 	if !structMode {
 		for rowNumber := 0; rowNumber < value.Len(); rowNumber++ {
 			// TODO: How to handle an error in the middle of the data? Rollback or Insert everything possible?
-			err := insertAndSetPrimaryKey(table, reflect.Indirect(value.Index(rowNumber)))
+			err := db.insertAndSetPrimaryKey(table, reflect.Indirect(value.Index(rowNumber)))
 			if err != nil {
 				return nil, err
 			}
 		}
 	} else {
-		err := insertAndSetPrimaryKey(table, value)
+		err := db.insertAndSetPrimaryKey(table, value)
 		if err != nil {
 			return nil, err
 		}
@@ -46,7 +46,7 @@ func (db *DB) Insert(table string, data interface{}) (interface{}, error) {
 	return nil, nil
 }
 
-func insertAndSetPrimaryKey(table string, data reflect.Value) error {
+func (db *DB) insertAndSetPrimaryKey(table string, data reflect.Value) error {
 	insert_id, structInfo, err := db.insertStruct(table, data.Interface())
 	if err != nil {
 		return err
