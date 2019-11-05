@@ -456,16 +456,26 @@ func (db *DB) Save(table string, data interface{}) error {
 	} else {
 		for i := 0; i < rv.Len(); i++ {
 
-			copy := reflect.New(rv.Index(0).Elem().Type())
-			copy.Elem().Set(rv.Index(i).Elem())
+			if rv.Index(0).Elem().Type().Kind() == reflect.Struct {
 
-			err = db.saveRow(table, copy.Interface())
-			if err != nil {
-				return err
+				copy := reflect.New(rv.Index(0).Elem().Type())
+				copy.Elem().Set(rv.Index(i).Elem())
+
+				err = db.saveRow(table, copy.Interface())
+				if err != nil {
+					return err
+				}
+
+				// addressability hack: assign the copy to index i so that the changes will persist
+				rv.Index(i).Set(copy)
+			} else {
+
+				err = db.saveRow(table, rv.Index(i).Interface())
+				if err != nil {
+					return err
+				}
 			}
 
-			// to "continue" addressability hack
-			rv.Index(i).Set(copy)
 		}
 	}
 

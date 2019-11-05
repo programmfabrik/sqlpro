@@ -565,7 +565,7 @@ func TestInterfaceSliceSave(t *testing.T) {
 
 }
 
-func TestInterfaceSliceSave2(t *testing.T) {
+func TestInterfaceSliceSaveStructs(t *testing.T) {
 	var (
 		tr  testRow
 		err error
