@@ -54,22 +54,18 @@ type dbWrappable interface {
 // NewSqlPro returns a wrapped database handle providing
 // access to the sql pro functions.
 func New(dbWrap dbWrappable) *DB {
-	var (
-		db *DB
-	)
-	db = new(DB)
-	db.DB = dbWrap
+	return &DB{
+		DB: dbWrap,
 
-	// DEFAULTs for sqlite
-	db.PlaceholderMode = QUESTION
-	db.PlaceholderValue = '?'
-	db.PlaceholderEscape = '\\'
-	db.PlaceholderKey = '@'
-	db.MaxPlaceholder = 100
-	db.SupportsLastInsertId = true
-	db.UseReturningForLastId = false
-
-	return db
+		// DEFAULTs for sqlite
+		PlaceholderMode:       QUESTION,
+		PlaceholderValue:      '?',
+		PlaceholderEscape:     '\\',
+		PlaceholderKey:        '@',
+		MaxPlaceholder:        100,
+		SupportsLastInsertId:  true,
+		UseReturningForLastId: false,
+	}
 }
 
 func (db *DB) Esc(s string) string {
@@ -89,7 +85,6 @@ func (db *DB) Log() *DB {
 
 // Query runs a query and fills the received rows or row into the target.
 // It is a wrapper method around the
-//
 func (db *DB) Query(target interface{}, query string, args ...interface{}) error {
 	var (
 		rows    *sql.Rows
@@ -102,8 +97,6 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 	if err != nil {
 		return err
 	}
-
-	// log.Printf("RowMode: %s %v", targetValue.Type().Kind(), rowMode)
 
 	rows, err = db.DB.Query(query0, newArgs...)
 	if err != nil {
@@ -124,7 +117,6 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 	}
 
 	if db.Debug && !strings.HasPrefix(query, "INSERT INTO") {
-		// log.Printf("Query: %s Args: %v", query, args)
 		err = db.PrintQuery(query, args...)
 		if err != nil {
 			panic(err)
@@ -183,9 +175,6 @@ func sqlError(err error, sqlS string, args []interface{}) error {
 }
 
 func sqlDebug(sqlS string, args []interface{}) string {
-	// if len(sqlS) > 1000 {
-	// 	return fmt.Sprintf("SQL:\n %s \nARGS:\n%v\n", sqlS[0:1000], argsToString(args...))
-	// }
 	return fmt.Sprintf("SQL:\n %s \nARGS:\n%v\n", sqlS, argsToString(args...))
 }
 

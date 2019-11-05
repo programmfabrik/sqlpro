@@ -37,7 +37,6 @@ func (si structInfo) onlyPrimaryKey() *fieldInfo {
 	for _, info := range si {
 		if info.primaryKey {
 			if fi != nil {
-				// more than one
 				return nil
 			}
 			fi = info
@@ -54,7 +53,6 @@ type NullTime struct {
 
 // Scan implements the Scanner interface.
 func (ni *NullTime) Scan(value interface{}) error {
-	// log.Printf("Scan %T %s", value, value)
 	if value == nil {
 		ni.Time, ni.Valid = nil, false
 		return nil
@@ -66,7 +64,6 @@ func (ni *NullTime) Scan(value interface{}) error {
 	default:
 		return fmt.Errorf("Unable to scan time: %T %s", value, value)
 	}
-	// pretty.Println(ni)
 	return nil
 
 }
@@ -222,8 +219,6 @@ func getStructInfo(t reflect.Type) structInfo {
 				info.isJson = true
 			case "readonly":
 				info.readOnly = true
-			default:
-				// ignore unrecognized
 			}
 		}
 
@@ -246,8 +241,6 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		runes              []rune
 		currRune, nextRune rune
 	)
-
-	// pretty.Println(args)
 
 	sb = strings.Builder{}
 	nthArg = 0
@@ -275,8 +268,6 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 			i++
 			continue
 		}
-
-		// log.Printf("%d curr: %s next: %s", i, string(currRune), string(nextRune))
 
 		if nthArg >= len(args) {
 			return "", nil, fmt.Errorf("replaceArgs: Expecting #%d arg. Got: %d args.", (nthArg + 1), len(args))
@@ -310,7 +301,6 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		}
 
 		rv := reflect.ValueOf(arg)
-		// log.Printf("Placeholder! %#v %v", arg, rv.IsValid())
 
 		if rv.IsValid() && rv.Type().Kind() == reflect.Slice {
 			l := rv.Len()
@@ -340,23 +330,18 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 				}
 			}
 			sb.WriteRune(')')
-			// pretty.Println(parts)
 			continue
 		}
 
 		newArgs = append(newArgs, arg)
 		db.appendPlaceholder(&sb, len(newArgs)-1)
-
 	}
 
-	// append left over args
 	for i := nthArg; i < len(args); i++ {
 		newArgs = append(newArgs, args[i])
 	}
 
-	// log.Printf("%s %v -> \"%s\"", sqlS, args, sb.String())
 	return sb.String(), newArgs, nil
-
 }
 
 // appendPlaceholder adds one placeholder to the built
@@ -370,63 +355,8 @@ func (db *DB) appendPlaceholder(sb *strings.Builder, numArg int) {
 	}
 }
 
-func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
-	var s string
-
-	v0 := db.nullValue(value, fi)
-	if v0 == nil {
-		return "NULL"
-	}
-	switch v := v0.(type) {
-	case int:
-		return strconv.FormatInt(int64(v), 10)
-	case int64:
-		return strconv.FormatInt(v, 10)
-	case *int64:
-		return strconv.FormatInt(*v, 10)
-	case bool:
-		if v == false {
-			return "FALSE"
-		} else {
-			return "TRUE"
-		}
-	case *bool:
-		if *v == false {
-			return "FALSE"
-		} else {
-			return "TRUE"
-		}
-	case []uint8:
-		s = string(v)
-	case json.RawMessage:
-		s = string(v)
-	case string:
-		s = v
-	case *string:
-		s = *v
-	case time.Time:
-		s = v.Format(time.RFC3339Nano)
-	default:
-		if vr, ok := v.(driver.Valuer); ok {
-			v2, _ := vr.Value()
-			return db.EscValueForInsert(v2, fi)
-		}
-		sv := reflect.ValueOf(value)
-		switch sv.Kind() {
-		case reflect.Int:
-			return strconv.FormatInt(sv.Int(), 10)
-		case reflect.String:
-			s = sv.String()
-		default:
-			panic(fmt.Sprintf("EscValueForInsert failed: %T, underlying type: %s", value, sv.Kind()))
-		}
-	}
-	return db.EscValue(s)
-}
-
 // nullValue returns the escaped value suitable for UPDATE & INSERT
 func (db *DB) nullValue(value interface{}, fi *fieldInfo) interface{} {
-
 	if isZero(value) {
 		if fi.allowNull() {
 			return nil
@@ -483,7 +413,6 @@ func (db *DB) Close() error {
 	if db.sqlDB == nil {
 		panic("sqlpro.DB.Close: Unable to close, use Open to initialize the wrapper.")
 	}
-	// log.Printf("sqlpro.Close: %p %s %s", db.DB, db.Driver, db.DSN)
 	return db.sqlDB.Close()
 }
 
@@ -495,8 +424,6 @@ func Open(driver, dsn string) (*DB, error) {
 		return nil, err
 	}
 
-	// conn.SetMaxOpenConns(1)
-
 	err = conn.Ping()
 	if err != nil {
 		conn.Close()
@@ -506,8 +433,6 @@ func Open(driver, dsn string) (*DB, error) {
 	wrapper := New(conn)
 
 	wrapper.sqlDB = conn
-
-	// wrapper.Debug = true
 
 	wrapper.DSN = dsn
 	wrapper.Driver = driver
@@ -522,12 +447,5 @@ func Open(driver, dsn string) (*DB, error) {
 		return nil, xerrors.Errorf("sqlpro.Open: Unsupported driver '%s'.", driver)
 	}
 
-	// log.Printf("sqlpro.Open: %p %s %s", wrapper.DB, driver, dsn)
 	return wrapper, nil
 }
-
-// Open -> handle
-// handle.New -> NewConnection
-// handle.Wrap -> Wrap yourself
-// handle.Tx -> NewTransaction
-// handle.Prepare -> NewPrearedStatement
