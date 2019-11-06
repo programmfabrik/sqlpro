@@ -92,11 +92,6 @@ func cleanup() {
 }
 
 func TestMain(m *testing.M) {
-
-	var (
-		err error
-	)
-
 	cleanup()
 
 	dbWrap, err := sql.Open("sqlite3", "./test.db")
