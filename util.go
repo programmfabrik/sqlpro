@@ -539,8 +539,8 @@ func Open(driver, dsn string) (*DB, error) {
 // handle.Tx -> NewTransaction
 // handle.Prepare -> NewPrearedStatement
 
-// if data unaddressable, make addressable local copy
-func (db *DB) ensureAddressable(data interface{}) interface{} {
+// if data is unaddressable strauct, make addressable local copy
+func (db *DB) ensureStructAddressable(data interface{}) interface{} {
 	rv := reflect.ValueOf(data)
 	if rv.Type().Kind() == reflect.Struct && !rv.CanAddr() {
 		addressableCopy := reflect.New(rv.Type())

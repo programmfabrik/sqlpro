@@ -78,7 +78,7 @@ func (db *DB) Insert(table string, data interface{}) error {
 		err        error
 	)
 
-	data = db.ensureAddressable(data)
+	data = db.ensureStructAddressable(data)
 
 	rv, structMode, err = checkData(data)
 	if err != nil {
@@ -413,7 +413,7 @@ func (db *DB) Update(table string, data interface{}) error {
 		args       []interface{}
 	)
 
-	data = db.ensureAddressable(data)
+	data = db.ensureStructAddressable(data)
 
 	rv, structMode, err = checkData(data)
 	if err != nil {
@@ -451,7 +451,7 @@ func (db *DB) Update(table string, data interface{}) error {
 // if it the record has no primary key or less than one
 func (db *DB) Save(table string, data interface{}) error {
 
-	data = db.ensureAddressable(data)
+	data = db.ensureStructAddressable(data)
 
 	rv, structMode, err := checkData(data)
 	if err != nil {
