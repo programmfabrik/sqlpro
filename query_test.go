@@ -613,8 +613,8 @@ func TestInsertBulk(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		tr := &testRow{
 			B: fmt.Sprintf("row %d", i+1),
+			D: float64(i + 1),
 		}
-		// D: float64(i + 1) <- deleted, to readd
 		rows = append(rows, tr)
 	}
 
@@ -629,8 +629,8 @@ func TestInsertBulkStructs(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		tr := testRow{
 			B: fmt.Sprintf("row %d", i+1),
+			D: float64(i + 1),
 		}
-		// D: float64(i + 1) <- deleted, to readd
 		rows = append(rows, tr)
 	}
 
