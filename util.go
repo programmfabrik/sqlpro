@@ -539,7 +539,7 @@ func Open(driver, dsn string) (*DB, error) {
 // handle.Tx -> NewTransaction
 // handle.Prepare -> NewPrearedStatement
 
-// if data is unaddressable strauct, make addressable local copy
+// if data is unaddressable struct, make addressable local copy
 func (db *DB) ensureStructAddressable(data interface{}) interface{} {
 	rv := reflect.ValueOf(data)
 	if rv.Type().Kind() == reflect.Struct && !rv.CanAddr() {
