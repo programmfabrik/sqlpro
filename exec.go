@@ -79,7 +79,7 @@ func (db *DB) Insert(table string, data interface{}) error {
 	)
 
 	rv = reflect.ValueOf(data)
-	// if data unaddressable stuct instead of addressable pointer to struct
+	// if data unaddressable stuct, will create new local addressable from it, will not pass changes to caller though
 	if rv.Type().Kind() == reflect.Struct && !rv.CanAddr() {
 		addressableCopy := reflect.New(rv.Type())
 		addressableCopy.Elem().Set(rv)
@@ -465,9 +465,14 @@ func (db *DB) Save(table string, data interface{}) error {
 	} else {
 		for i := 0; i < rv.Len(); i++ {
 
+			/* in case we have interface type behind struct instead of pointer, reflect.indirect won't yield a struct
+			* and we won't be able to apply FieldByName on interface type, in this case I will create new pointer to struct
+			* using address extracted from interface
+			 */
 			if rv.Index(i).Elem().Type().Kind() == reflect.Struct && rv.Index(i).Type().Kind() == reflect.Interface {
 
 				var intfData [2]uintptr = rv.Index(i).InterfaceData()
+				// second element of interface is address to actual struct
 				ref := reflect.NewAt(rv.Index(i).Elem().Type(), unsafe.Pointer(intfData[1]))
 				err = db.saveRow(table, ref.Interface())
 				if err != nil {
