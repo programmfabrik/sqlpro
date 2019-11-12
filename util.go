@@ -385,10 +385,12 @@ func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
 		return strconv.FormatInt(int64(v), 10)
 	case int64:
 		return strconv.FormatInt(v, 10)
-	case float64:
-		return strconv.FormatFloat(v, 'g', -1, 64)
 	case *int64:
 		return strconv.FormatInt(*v, 10)
+	case float64:
+		return strconv.FormatFloat(v, 'g', -1, 64)
+	case *float64:
+		return strconv.FormatFloat(*v, 'g', -1, 64)
 	case bool:
 		if v == false {
 			return "FALSE"
