@@ -78,13 +78,7 @@ func (db *DB) Insert(table string, data interface{}) error {
 		err        error
 	)
 
-	rv = reflect.ValueOf(data)
-	// if data unaddressable stuct, will create new local addressable from it, will not pass changes to caller though
-	if rv.Type().Kind() == reflect.Struct && !rv.CanAddr() {
-		addressableCopy := reflect.New(rv.Type())
-		addressableCopy.Elem().Set(rv)
-		data = addressableCopy.Interface()
-	}
+	data = db.ensureAddressable(data)
 
 	rv, structMode, err = checkData(data)
 	if err != nil {
@@ -419,6 +413,8 @@ func (db *DB) Update(table string, data interface{}) error {
 		args       []interface{}
 	)
 
+	data = db.ensureAddressable(data)
+
 	rv, structMode, err = checkData(data)
 	if err != nil {
 		return err
@@ -454,6 +450,8 @@ func (db *DB) Update(table string, data interface{}) error {
 // primary key is zero, and and UPDATE if it is not. It panics
 // if it the record has no primary key or less than one
 func (db *DB) Save(table string, data interface{}) error {
+
+	data = db.ensureAddressable(data)
 
 	rv, structMode, err := checkData(data)
 	if err != nil {
