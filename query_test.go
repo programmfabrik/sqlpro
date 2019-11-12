@@ -223,8 +223,8 @@ func TestInsertStruct(t *testing.T) {
 
 	tr := testRow{B: "foo3"}
 	err := db.Insert("test", tr)
-	if err == nil {
-		t.Error("Insert must not accept struct.")
+	if err != nil {
+		t.Error(err)
 	}
 }
 

@@ -78,6 +78,14 @@ func (db *DB) Insert(table string, data interface{}) error {
 		err        error
 	)
 
+	rv = reflect.ValueOf(data)
+	// if data unaddressable stuct instead of addressable pointer to struct
+	if rv.Type().Kind() == reflect.Struct && !rv.CanAddr() {
+		addressableCopy := reflect.New(rv.Type())
+		addressableCopy.Elem().Set(rv)
+		data = addressableCopy.Interface()
+	}
+
 	rv, structMode, err = checkData(data)
 	if err != nil {
 		return err
