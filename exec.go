@@ -45,9 +45,6 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 			return rv, false, fmt.Errorf("Insert/Update needs a slice of structs. Have: %s", rv.Type().Elem().Kind())
 		}
 	case reflect.Struct:
-		if !rv.CanAddr() {
-			return err()
-		}
 		structMode = true
 	default:
 		return err()
@@ -78,8 +75,6 @@ func (db *DB) Insert(table string, data interface{}) error {
 		err        error
 	)
 
-	data = db.ensureStructAddressable(data)
-
 	rv, structMode, err = checkData(data)
 	if err != nil {
 		return err
@@ -94,7 +89,10 @@ func (db *DB) Insert(table string, data interface{}) error {
 			}
 			pk := structInfo.onlyPrimaryKey()
 			if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
-				setPrimaryKey(row.FieldByName(pk.name), insert_id)
+				pkField := row.FieldByName(pk.name)
+				if pkField.CanAddr() {
+					setPrimaryKey(pkField, insert_id)
+				}
 			}
 		}
 	} else {
@@ -105,7 +103,10 @@ func (db *DB) Insert(table string, data interface{}) error {
 		pk := structInfo.onlyPrimaryKey()
 		// log.Printf("PK: %d", insert_id)
 		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
-			setPrimaryKey(rv.FieldByName(pk.name), insert_id)
+			pkField := rv.FieldByName(pk.name)
+			if pkField.CanAddr() {
+				setPrimaryKey(pkField, insert_id)
+			}
 		}
 	}
 
@@ -413,8 +414,6 @@ func (db *DB) Update(table string, data interface{}) error {
 		args       []interface{}
 	)
 
-	data = db.ensureStructAddressable(data)
-
 	rv, structMode, err = checkData(data)
 	if err != nil {
 		return err
@@ -450,8 +449,6 @@ func (db *DB) Update(table string, data interface{}) error {
 // primary key is zero, and and UPDATE if it is not. It panics
 // if it the record has no primary key or less than one
 func (db *DB) Save(table string, data interface{}) error {
-
-	data = db.ensureStructAddressable(data)
 
 	rv, structMode, err := checkData(data)
 	if err != nil {

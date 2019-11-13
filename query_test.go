@@ -219,6 +219,7 @@ func TestInsertStructPtr(t *testing.T) {
 		t.Errorf("data[0].A needs to be set (pk).")
 	}
 }
+
 func TestInsertStruct(t *testing.T) {
 
 	tr := testRow{B: "foo3"}
