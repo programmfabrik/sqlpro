@@ -2,6 +2,7 @@ package sqlpro
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -181,7 +182,9 @@ func (db *DB) PrintQuery(query string, args ...interface{}) error {
 }
 
 func debugError(err error) error {
-	log.Printf("sqlpro error: %s", err)
+	if !errors.Is(err, ErrQueryReturnedZeroRows) {
+		log.Printf("sqlpro error: %s", err)
+	}
 	return err
 }
 
