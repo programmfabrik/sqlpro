@@ -172,12 +172,16 @@ func getStructInfo(t reflect.Type) structInfo {
 			continue
 		}
 
+		path := strings.Split(dbTag, ",")
+		if path[0] == "-" {
+			// ignore field
+			continue
+		}
+
 		if field.PkgPath != "" {
 			// unexported field
 			panic(fmt.Errorf("getStructInfo: Unable to use unexported field for sqlpro: %s", field.Name))
 		}
-
-		path := strings.Split(dbTag, ",")
 
 		info := fieldInfo{
 			dbName:      path[0],
