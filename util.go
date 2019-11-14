@@ -523,6 +523,7 @@ func Open(driver, dsn string) (*DB, error) {
 	case "postgres":
 		wrapper.PlaceholderMode = DOLLAR
 		wrapper.UseReturningForLastId = true
+		wrapper.AllowsConcurrentWrites = true
 		wrapper.SupportsLastInsertId = false
 	case "sqlite3":
 	default:
