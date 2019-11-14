@@ -12,6 +12,12 @@ import (
 	"golang.org/x/xerrors"
 )
 
+type dbDriver string
+
+// The driver strings must match the driver from the stdlib
+const POSTGRES = "postgres"
+const SQLITE3 = "sqlite3"
+
 type DB struct {
 	DB                    dbWrappable
 	sqlDB                 *sql.DB // this can be <nil>
@@ -24,7 +30,8 @@ type DB struct {
 	MaxPlaceholder        int
 	UseReturningForLastId bool
 	SupportsLastInsertId  bool
-	Driver, DSN           string
+	Driver                dbDriver
+	DSN                   string
 }
 
 type DebugLevel int

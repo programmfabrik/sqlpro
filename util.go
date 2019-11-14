@@ -495,9 +495,20 @@ func (db *DB) Close() error {
 }
 
 // Open opens a database connection and returns an sqlpro wrap handle
-func Open(driver, dsn string) (*DB, error) {
+func Open(driverS, dsn string) (*DB, error) {
 
-	conn, err := sql.Open(driver, dsn)
+	var driver dbDriver
+
+	switch driverS {
+	default:
+		return nil, fmt.Errorf(`Unknown driver "%s"`, driver)
+	case "sqlite3":
+		driver = SQLITE3
+	case "postgres":
+		driver = POSTGRES
+	}
+
+	conn, err := sql.Open(string(driver), dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -513,19 +524,18 @@ func Open(driver, dsn string) (*DB, error) {
 	wrapper := New(conn)
 
 	wrapper.sqlDB = conn
+	wrapper.Driver = driver
 
 	// wrapper.Debug = true
 
 	wrapper.DSN = dsn
-	wrapper.Driver = driver
 
 	switch driver {
-	case "postgres":
+	case POSTGRES:
 		wrapper.PlaceholderMode = DOLLAR
 		wrapper.UseReturningForLastId = true
-		wrapper.AllowsConcurrentWrites = true
 		wrapper.SupportsLastInsertId = false
-	case "sqlite3":
+	case SQLITE3:
 	default:
 		return nil, xerrors.Errorf("sqlpro.Open: Unsupported driver '%s'.", driver)
 	}
