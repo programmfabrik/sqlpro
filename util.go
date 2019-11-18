@@ -322,7 +322,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		if rv.IsValid() && rv.Type().Kind() == reflect.Slice {
 			l := rv.Len()
 			if l == 0 {
-				return "", nil, fmt.Errorf("replaceArgs: Unable to merge empty slice.")
+				return "", nil, fmt.Errorf(`sqlpro: replaceArgs: Unable to merge empty slice: "%s"`, sqlS)
 			}
 			sb.WriteRune('(')
 			fi := &fieldInfo{ptr: rv.Type().Elem().Kind() == reflect.Ptr}
