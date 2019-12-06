@@ -413,6 +413,8 @@ func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
 		s = *v
 	case time.Time:
 		s = v.Format(time.RFC3339Nano)
+	case *time.Time:
+		s = v.Format(time.RFC3339Nano)
 	default:
 		if vr, ok := v.(driver.Valuer); ok {
 			v2, _ := vr.Value()
