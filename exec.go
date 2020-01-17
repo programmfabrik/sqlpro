@@ -44,9 +44,6 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 			return rv, false, fmt.Errorf("Insert/Update needs a slice of structs. Have: %s", rv.Type().Elem().Kind())
 		}
 	case reflect.Struct:
-		if !rv.CanAddr() {
-			return err()
-		}
 		structMode = true
 	default:
 		return err()
@@ -90,7 +87,7 @@ func (db *DB) Insert(table string, data interface{}) error {
 				return err
 			}
 			pk := structInfo.onlyPrimaryKey()
-			if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
+			if pk != nil && pk.structField.Type.Kind() == reflect.Int64 && row.CanAddr() {
 				setPrimaryKey(row.FieldByName(pk.name), insert_id)
 			}
 		}
@@ -101,7 +98,7 @@ func (db *DB) Insert(table string, data interface{}) error {
 		}
 		pk := structInfo.onlyPrimaryKey()
 		// log.Printf("PK: %d", insert_id)
-		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
+		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 && rv.CanAddr() {
 			setPrimaryKey(rv.FieldByName(pk.name), insert_id)
 		}
 	}
