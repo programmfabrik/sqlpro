@@ -322,7 +322,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		if rv.IsValid() && rv.Type().Kind() == reflect.Slice {
 			l := rv.Len()
 			if l == 0 {
-				return "", nil, fmt.Errorf("replaceArgs: Unable to merge empty slice.")
+				return "", nil, fmt.Errorf(`sqlpro: replaceArgs: Unable to merge empty slice: "%s"`, sqlS)
 			}
 			sb.WriteRune('(')
 			fi := &fieldInfo{ptr: rv.Type().Elem().Kind() == reflect.Ptr}
@@ -391,6 +391,14 @@ func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
 		return strconv.FormatInt(v, 10)
 	case *int64:
 		return strconv.FormatInt(*v, 10)
+	case float32:
+		return strconv.FormatFloat(float64(v), 'f', -1, 32)
+	case *float32:
+		return strconv.FormatFloat(float64(*v), 'f', -1, 32)
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case *float64:
+		return strconv.FormatFloat(*v, 'f', -1, 64)
 	case bool:
 		if v == false {
 			return "FALSE"
@@ -412,6 +420,8 @@ func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
 	case *string:
 		s = *v
 	case time.Time:
+		s = v.Format(time.RFC3339Nano)
+	case *time.Time:
 		s = v.Format(time.RFC3339Nano)
 	default:
 		if vr, ok := v.(driver.Valuer); ok {
