@@ -16,6 +16,7 @@ import (
 // *[]struct
 // []*struct
 // []struct
+// struct
 // *struct
 //
 // For structs the function returns true, nil, for slices false, nil
@@ -30,7 +31,8 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 		return rv, false, fmt.Errorf("Insert/Update needs a struct or slice of structs.")
 	}
 
-	rv = reflect.Indirect(reflect.ValueOf(data))
+	value := reflect.ValueOf(data)
+	rv = reflect.Indirect(value)
 
 	switch rv.Type().Kind() {
 	case reflect.Slice:
@@ -45,7 +47,9 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 		}
 	case reflect.Struct:
 		if !rv.CanAddr() {
-			return err()
+			vp := reflect.New(reflect.TypeOf(data))
+			rv = reflect.Indirect(vp)
+			rv.Set(value)
 		}
 		structMode = true
 	default:
