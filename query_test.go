@@ -219,12 +219,13 @@ func TestInsertStructPtr(t *testing.T) {
 		t.Errorf("data[0].A needs to be set (pk).")
 	}
 }
+
 func TestInsertStruct(t *testing.T) {
 
 	tr := testRow{B: "foo3"}
 	err := db.Insert("test", tr)
-	if err == nil {
-		t.Error("Insert must not accept struct.")
+	if err != nil {
+		t.Error(err)
 	}
 }
 
@@ -556,6 +557,24 @@ func TestInterfaceSliceSave(t *testing.T) {
 		B: "foo_save",
 	}
 
+	i := []interface{}{tr}
+
+	err = db.Save("test", &i)
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestInterfaceSlicePtrSave(t *testing.T) {
+	var (
+		tr  testRow
+		err error
+	)
+	tr = testRow{
+		B: "foo_save",
+	}
+
 	i := []interface{}{&tr}
 
 	err = db.Save("test", &i)
@@ -590,7 +609,7 @@ func TestInsertMany(t *testing.T) {
 	}
 }
 
-func ATestInsertBulk(t *testing.T) {
+func TestInsertBulk(t *testing.T) {
 	rows := make([]*testRow, 0)
 	for i := 0; i < 1000; i++ {
 		tr := &testRow{
