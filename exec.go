@@ -87,7 +87,7 @@ func (db *DB) Insert(table string, data interface{}) error {
 				return err
 			}
 			pk := structInfo.onlyPrimaryKey()
-			if pk != nil && pk.structField.Type.Kind() == reflect.Int64 && row.CanAddr() {
+			if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
 				setPrimaryKey(row.FieldByName(pk.name), insert_id)
 			}
 		}
