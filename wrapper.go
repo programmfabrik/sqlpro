@@ -189,7 +189,7 @@ func debugError(err error) error {
 }
 
 func sqlError(err error, sqlS string, args []interface{}) error {
-	return xerrors.Errorf("Database Error: %s\n\n%sDatabase Error: %s", err, sqlDebug(sqlS, args), err)
+	return xerrors.Errorf("database error: %s\n\n%s database error: %s", err, sqlDebug(sqlS, args), err)
 }
 
 func sqlDebug(sqlS string, args []interface{}) string {
@@ -230,7 +230,7 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 	}
 
 	if row_count != expRows {
-		return 0, debugError(fmt.Errorf("Exec affected only %d out of %d.", row_count, expRows))
+		return 0, debugError(fmt.Errorf("exec affected only %d out of %d", row_count, expRows))
 	}
 
 	if !db.SupportsLastInsertId {

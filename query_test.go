@@ -138,18 +138,18 @@ func TestInsertSliceStructPtr(t *testing.T) {
 	now = time.Now()
 
 	data := []*testRow{
-		&testRow{
+		{
 			B: "fooUPDATEME",
 			F: jsonStore{"Yo", "Mama"},
 		},
-		&testRow{
+		{
 			B: "bar",
 			C: "other",
 			D: 1.2345,
 			E: &now,
 			F: jsonStore{"Henk", "Torsten"},
 		},
-		&testRow{
+		{
 			B: "torsten",
 			C: "other",
 			D: 1.2345,
@@ -175,7 +175,7 @@ func TestInsertSliceStructPtr(t *testing.T) {
 	}
 
 	if readBack.E == nil || !readBack.E.Equal(now) {
-		t.Errorf("Time e is <nil> or wrong: %s", readBack.E)
+		t.Errorf("time e is <nil> or wrong: %s", readBack.E)
 	}
 
 	// db.PrintQuery("SELECT * FROM test WHERE c = 'other'")
@@ -184,10 +184,10 @@ func TestInsertSliceStructPtr(t *testing.T) {
 
 func TestInsertSliceStruct(t *testing.T) {
 	data := []testRow{
-		testRow{
+		{
 			B: "foo4",
 		},
-		testRow{
+		{
 			B: "bar5",
 			C: "other",
 			D: 1.2345,
@@ -202,7 +202,7 @@ func TestInsertSliceStruct(t *testing.T) {
 
 	for idx, tr := range data {
 		if tr.A <= 0 {
-			t.Errorf("data[%d].A needs to be set (pk).", idx)
+			t.Errorf("data[%d].A needs to be set (pk)", idx)
 		}
 	}
 }
@@ -216,7 +216,7 @@ func TestInsertStructPtr(t *testing.T) {
 		t.Error(err)
 	}
 	if tr.A <= 0 {
-		t.Errorf("data[0].A needs to be set (pk).")
+		t.Errorf("data[0].A needs to be set (pk)")
 	}
 }
 
@@ -242,11 +242,11 @@ func TestUpdate(t *testing.T) {
 
 func TestUpdateMany(t *testing.T) {
 	trs := []*testRow{
-		&testRow{
+		{
 			A: 1,
 			B: "foo",
 		},
-		&testRow{
+		{
 			A: 3,
 			B: "torsten2",
 		},
@@ -260,10 +260,10 @@ func TestUpdateMany(t *testing.T) {
 
 func TestSaveMany(t *testing.T) {
 	trs := []*testRow{
-		&testRow{
+		{
 			B: "henk",
 		},
-		&testRow{
+		{
 			A: 3,
 			B: "torsten3",
 		},
@@ -282,7 +282,7 @@ func TestNoPointer(t *testing.T) {
 		r := recover()
 		if r == nil {
 			// no panic -> wrong
-			t.Errorf("Expected error for passing struct instead of ptr.")
+			t.Errorf("expected error for passing struct instead of pointer")
 		}
 	}()
 
@@ -297,7 +297,7 @@ func TestNoStruct(t *testing.T) {
 		t.Error(err)
 	}
 	if i != 1 {
-		t.Errorf("Expected i == 1.")
+		t.Errorf("expected i == 1")
 	}
 }
 
@@ -352,7 +352,7 @@ func TestQueryStruct2(t *testing.T) {
 	defer func() {
 		r := recover()
 		if r == nil {
-			t.Errorf("Expected a panic.")
+			t.Errorf("expected a panic")
 		}
 	}()
 
@@ -389,7 +389,7 @@ func TestStandard(t *testing.T) {
 		t.Error(err)
 	}
 	if json0.Field != "Henk" || json0.Field2 != "Torsten" {
-		t.Errorf("Field must be Henk and Torsten.")
+		t.Errorf("field must be 'Henk' and 'Torsten'")
 	}
 
 }
@@ -433,7 +433,7 @@ func TestQueryAll(t *testing.T) {
 		t.Error(err)
 	}
 	if len(rows) == 0 {
-		t.Errorf("0 rows.")
+		t.Errorf("0 rows")
 	}
 }
 
@@ -476,7 +476,7 @@ func TestQueryAllFloat64Ptr(t *testing.T) {
 		t.Error(err)
 	}
 	if len(rows) == 0 || rows[0] != nil {
-		t.Errorf("First d needs to be <nil>.")
+		t.Errorf("first d needs to be <nil>")
 	}
 	// litter.Dump(rows)
 }
@@ -488,7 +488,7 @@ func TestCountAll(t *testing.T) {
 		t.Error(err)
 	}
 	if i == nil || *i <= 0 {
-		t.Errorf("count needs to be > 0: %v.", i)
+		t.Errorf("count needs to be > 0: %v", i)
 	}
 }
 
@@ -504,14 +504,14 @@ func TestCountUint(t *testing.T) {
 		t.Error(err)
 	}
 	if i <= 0 {
-		t.Errorf("count needs to be > 0: %v.", i)
+		t.Errorf("count needs to be > 0: %v", i)
 	}
 	err = db.Query(&i2, "SELECT count(*) FROM test")
 	if err != nil {
 		t.Error(err)
 	}
 	if i2 == nil || *i2 <= 0 {
-		t.Errorf("count needs to be > 0: %v.", *i2)
+		t.Errorf("count needs to be > 0: %v", *i2)
 	}
 }
 
@@ -637,10 +637,10 @@ func TestQueryIntStruct(t *testing.T) {
 
 	err := db.Query(&dummy, "SELECT * FROM test WHERE a IN ?", []int64{-1, -2, -3})
 	if err == nil {
-		t.Errorf("Expected ErrQueryReturnedZeroRows.")
+		t.Errorf("expected ErrQueryReturnedZeroRows")
 	}
 	if !errors.Is(err, ErrQueryReturnedZeroRows) {
-		t.Errorf("Expected ErrQueryReturnedZeroRows, got: %w", err)
+		t.Errorf("expected ErrQueryReturnedZeroRows, got: %s", err)
 	}
 }
 
@@ -652,7 +652,7 @@ func TestQueryIntSlice(t *testing.T) {
 		t.Error(err)
 	}
 	if len(dummy) != 0 {
-		t.Errorf("int slice must not contain entries.")
+		t.Errorf("int slice must not contain entries")
 	}
 }
 
@@ -668,7 +668,7 @@ func TestQuerySqlRows(t *testing.T) {
 		t.Error(err)
 	}
 	if rows == nil {
-		t.Errorf("Rows == <nil>.")
+		t.Errorf("rows == <nil>")
 	}
 
 	for rows.Next() {
@@ -677,7 +677,7 @@ func TestQuerySqlRows(t *testing.T) {
 			t.Error(err)
 		}
 		if a == 0 {
-			t.Errorf("Scan must return > 0 integer.")
+			t.Errorf("scan must return > 0 integer")
 		}
 		idx++
 	}
@@ -687,7 +687,7 @@ func TestQuerySqlRows(t *testing.T) {
 		t.Error(err)
 	}
 	if idx == 0 {
-		t.Errorf("No rows received.")
+		t.Errorf("no rows received")
 	}
 
 }
@@ -700,7 +700,7 @@ func TestQuerySqlRowsNoPtrPtr(t *testing.T) {
 	defer func() {
 		r := recover()
 		if r == nil {
-			t.Errorf("Expected a panic.")
+			t.Errorf("expected a panic")
 		}
 	}()
 
@@ -746,11 +746,11 @@ func TestJson(t *testing.T) {
 	}
 
 	if tr2[0].F.B != tr.F.B {
-		t.Errorf(`Error reading back json data, expected "%s", got: "%s"`, tr.F.B, tr2[0].F.B)
+		t.Errorf(`error reading back json data, expected "%s", got: "%s"`, tr.F.B, tr2[0].F.B)
 	}
 
 	if tr2[1].F.B != trPtr.F.B {
-		t.Errorf(`Error reading back json data, expected "%s", got: "%s"`, trPtr.F.B, tr2[1].F.B)
+		t.Errorf(`error reading back json data, expected "%s", got: "%s"`, trPtr.F.B, tr2[1].F.B)
 	}
 
 	// pretty.Println(tr2)
@@ -782,7 +782,7 @@ func TestUint8(t *testing.T) {
 	}
 
 	if string(tr3.F) != string(tr.F) {
-		t.Errorf("Expected %s got %s", string(tr.F), string(tr3.F))
+		t.Errorf("expected %s got %s", string(tr.F), string(tr3.F))
 	}
 
 	err = db.Query(&tr3, "SELECT * FROM test WHERE A=?", tr2.A)
@@ -791,7 +791,7 @@ func TestUint8(t *testing.T) {
 	}
 
 	if tr3.F != nil {
-		t.Errorf("Expected <nil> got %s", string(tr3.F))
+		t.Errorf("expected <nil> got %s", string(tr3.F))
 	}
 
 }
@@ -823,7 +823,7 @@ func TestUint8Ptr(t *testing.T) {
 	}
 
 	if string(*tr.F) != string(*tr3.F) {
-		t.Errorf("Expected %s got %s", string(*tr.F), string(*tr3.F))
+		t.Errorf("expected %s got %s", string(*tr.F), string(*tr3.F))
 	}
 
 	err = db.Query(&tr3, "SELECT * FROM test WHERE A=?", tr2.A)
@@ -832,7 +832,7 @@ func TestUint8Ptr(t *testing.T) {
 	}
 
 	if tr3.F != nil {
-		t.Errorf("Expected <nil> got %s", string(*tr3.F))
+		t.Errorf("expected <nil> got %s", string(*tr3.F))
 	}
 
 }
@@ -858,21 +858,21 @@ func TestReplaceArgs(t *testing.T) {
 
 	runPlaceholderTests(t, db2, []phTest{
 		// sql, args, expected, err?
-		phTest{"SELECT * FROM @ WHERE id IN ?", ifcArr{"test", []int64{-1, -2, -3}}, `SELECT * FROM "test" WHERE id IN (?,?,?)`, false, 3},
-		phTest{"ID IN ?", ifcArr{int_args}, "ID IN (?,?,?,?)", false, 4},
-		phTest{"ID IN '??'", ifcArr{}, "ID IN '?'", false, 0},
-		phTest{"ID = ?", ifcArr{"hen'k"}, "ID = ?", false, 1},
-		phTest{"ID = ?", ifcArr{5}, "ID = ?", false, 1},
-		phTest{"ID IN '''", ifcArr{}, "ID IN '''", false, 0},
-		phTest{"ID IN '?'''", ifcArr{}, "ID IN '?'''", true, 0},
-		phTest{"ID IN '??''' WHERE ?", ifcArr{int_args}, "ID IN '?''' WHERE (?,?,?,?)", false, 4},
-		phTest{"ID IN ?", ifcArr{string_args}, "ID IN (?,?,?)", false, 3},
+		{"SELECT * FROM @ WHERE id IN ?", ifcArr{"test", []int64{-1, -2, -3}}, `SELECT * FROM "test" WHERE id IN (?,?,?)`, false, 3},
+		{"ID IN ?", ifcArr{int_args}, "ID IN (?,?,?,?)", false, 4},
+		{"ID IN '??'", ifcArr{}, "ID IN '?'", false, 0},
+		{"ID = ?", ifcArr{"hen'k"}, "ID = ?", false, 1},
+		{"ID = ?", ifcArr{5}, "ID = ?", false, 1},
+		{"ID IN '''", ifcArr{}, "ID IN '''", false, 0},
+		{"ID IN '?'''", ifcArr{}, "ID IN '?'''", true, 0},
+		{"ID IN '??''' WHERE ?", ifcArr{int_args}, "ID IN '?''' WHERE (?,?,?,?)", false, 4},
+		{"ID IN ?", ifcArr{string_args}, "ID IN (?,?,?)", false, 3},
 	})
 
 	db2.PlaceholderMode = DOLLAR
 
 	runPlaceholderTests(t, db2, []phTest{
-		phTest{"ID IN ?", ifcArr{int_args}, "ID IN ($1,$2,$3,$4)", false, 4},
+		{"ID IN ?", ifcArr{int_args}, "ID IN ($1,$2,$3,$4)", false, 4},
 	})
 
 }
@@ -901,7 +901,7 @@ func runPlaceholderTests(t *testing.T, db *DB, phTests []phTest) {
 				args = append(args, arg)
 			}
 		default:
-			panic(fmt.Sprintf("Unsupported type %T in test.", te.args))
+			panic(fmt.Sprintf("unsupported type %T in test", te.args))
 		}
 		// pretty.Println(args)
 		sqlS, newArgs, err = db.replaceArgs(te.sql, args...)
@@ -912,14 +912,14 @@ func runPlaceholderTests(t *testing.T, db *DB, phTests []phTest) {
 			t.Error(err)
 		} else {
 			if te.expErr {
-				t.Errorf("Error expected for: %s", te.sql)
+				t.Errorf("error expected for: %s", te.sql)
 			}
 		}
 		if sqlS != te.expSql {
-			t.Errorf("Replace %s not matching %s", sqlS, te.expSql)
+			t.Errorf("replace %s not matching %s", sqlS, te.expSql)
 		}
 		if len(newArgs) != te.expArgCount {
-			t.Errorf("Expected arg count wrong: %s, exp: %d", sqlS, te.expArgCount)
+			t.Errorf("expected arg count wrong: %s, exp: %d", sqlS, te.expArgCount)
 		}
 	}
 }

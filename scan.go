@@ -167,7 +167,7 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 				newData := reflect.New(fieldV.Type())
 				err = json.Unmarshal((*v).Data, newData.Interface())
 				if err != nil {
-					return xerrors.Errorf("Error unmarshalling data: %s", err)
+					return xerrors.Errorf("error unmarshalling data: %s", err)
 				}
 				fieldV.Set(reflect.Indirect(reflect.Value(newData)))
 			} else {
@@ -297,12 +297,12 @@ func Scan(target interface{}, rows *sql.Rows) error {
 
 	v := reflect.ValueOf(target)
 	if v.Type().Kind() != reflect.Ptr {
-		panic(fmt.Errorf("Scan: non-pointer %v", v.Type()))
+		panic(fmt.Errorf("scan: non-pointer %v", v.Type()))
 	}
 
 	targetValue = v.Elem()
 	if !targetValue.CanAddr() {
-		panic("Scan: Unable to use unadressable field as target.")
+		panic("scan: Unable to use unaddressable field as target.")
 	}
 
 	if targetValue.Type().Kind() != reflect.Slice {

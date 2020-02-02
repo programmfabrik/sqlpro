@@ -14,7 +14,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-var ErrQueryReturnedZeroRows error = errors.New("Query returned 0 rows.")
+var ErrQueryReturnedZeroRows error = errors.New("query returned 0 rows")
 
 // structInfo is a map to fieldInfo by db_name
 type structInfo map[string]*fieldInfo
@@ -27,7 +27,7 @@ func (si structInfo) hasDbName(db_name string) bool {
 func (si structInfo) primaryKey(db_name string) bool {
 	fieldInfo, ok := si[db_name]
 	if !ok {
-		panic(fmt.Sprintf("isPrimaryKey: db_name %s not found.", db_name))
+		panic(fmt.Sprintf("isPrimaryKey: db_name %s not found", db_name))
 	}
 	return fieldInfo.primaryKey
 }
@@ -67,7 +67,7 @@ func (ni *NullTime) Scan(value interface{}) error {
 		ni.Time = &v
 		ni.Valid = true
 	default:
-		return fmt.Errorf("Unable to scan time: %T %s", value, value)
+		return fmt.Errorf("unable to scan time: %T %s", value, value)
 	}
 	// pretty.Println(ni)
 	return nil
@@ -286,7 +286,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		// log.Printf("%d curr: %s next: %s", i, string(currRune), string(nextRune))
 
 		if nthArg >= len(args) {
-			return "", nil, fmt.Errorf("replaceArgs: Expecting #%d arg. Got: %d args.", (nthArg + 1), len(args))
+			return "", nil, fmt.Errorf("replaceArgs: Expecting #%d arg, Got: %d args", (nthArg + 1), len(args))
 		}
 
 		arg := args[nthArg]
@@ -299,7 +299,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 			case string:
 				sb.WriteString(db.Esc(v))
 			default:
-				return "", nil, fmt.Errorf("replaceArgs: Unable to replace %s with type %T, need *string or string.", string(currRune), arg)
+				return "", nil, fmt.Errorf("replaceArgs: Unable to replace %s with type %T, need *string or string", string(currRune), arg)
 			}
 			continue
 		}
@@ -450,7 +450,7 @@ func (db *DB) nullValue(value interface{}, fi *fieldInfo) interface{} {
 		}
 		// a pointer which does not allow to store null
 		if fi.ptr {
-			panic(fmt.Errorf(`Unable to store <nil> pointer in "notnull" field: %s`, fi.name))
+			panic(fmt.Errorf(`unable to store <nil> pointer in "notnull" field: %s`, fi.name))
 		}
 	}
 
@@ -511,7 +511,7 @@ func Open(driverS, dsn string) (*DB, error) {
 
 	switch driverS {
 	default:
-		return nil, fmt.Errorf(`Unknown driver "%s"`, driver)
+		return nil, fmt.Errorf(`unknown driver "%s"`, driver)
 	case "sqlite3":
 		driver = SQLITE3
 	case "postgres":
@@ -547,7 +547,7 @@ func Open(driverS, dsn string) (*DB, error) {
 		wrapper.SupportsLastInsertId = false
 	case SQLITE3:
 	default:
-		return nil, xerrors.Errorf("sqlpro.Open: Unsupported driver '%s'.", driver)
+		return nil, xerrors.Errorf("sqlpro.Open: Unsupported driver '%s'", driver)
 	}
 
 	// log.Printf("sqlpro.Open: %p %s %s", wrapper.DB, driver, dsn)

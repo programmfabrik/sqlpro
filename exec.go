@@ -12,7 +12,7 @@ import (
 
 // checkData checks that the given data is either one of:
 //
-// *[]*strcut
+// *[]*struct
 // *[]struct
 // []*struct
 // []struct
@@ -27,7 +27,7 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 	)
 
 	err := func() (reflect.Value, bool, error) {
-		return rv, false, fmt.Errorf("Insert/Update needs a struct or slice of structs.")
+		return rv, false, fmt.Errorf("insert/update needs a struct or slice of structs")
 	}
 
 	rv = reflect.Indirect(reflect.ValueOf(data))
@@ -56,7 +56,7 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 // the record in the DB.
 // The given data needs to be:
 //
-// *[]*strcut
+// *[]*struct
 // *[]struct
 // []*struct
 // []struct
@@ -114,7 +114,7 @@ func setPrimaryKey(rv reflect.Value, id int64) {
 	case reflect.Uint64:
 		rv.SetUint(uint64(id))
 	default:
-		err := fmt.Errorf("Unknown type to set primary key: %s", rv.Type())
+		err := fmt.Errorf("unknown type to set primary key: %s", rv.Type())
 		panic(err)
 	}
 }
@@ -123,7 +123,7 @@ func setPrimaryKey(rv reflect.Value, id int64) {
 // the record in the DB with one Exec.
 // The given data needs to be:
 //
-// *[]*strcut
+// *[]*struct
 // *[]struct
 // []*struct
 // []struct
@@ -142,7 +142,7 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 	}
 
 	if structMode {
-		return fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
+		return fmt.Errorf("need slice to insert bulk")
 	}
 
 	key_map := make(map[string]*fieldInfo, 0)
@@ -221,7 +221,7 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 	}
 
 	if structMode {
-		return fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
+		return fmt.Errorf("need slice to insert bulk")
 	}
 
 	key_map := make(map[string]*fieldInfo, 0)
@@ -366,7 +366,7 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 			// skip primary keys for update
 			pk_value = db.nullValue(value, structInfo[key])
 			if pk_value == nil {
-				return "", args, fmt.Errorf("Unable to build UPDATE clause with <nil> key: %s", key)
+				return "", args, fmt.Errorf("unable to build UPDATE clause with <nil> key: %s", key)
 			}
 			where.WriteString(db.Esc(key))
 			where.WriteString("=")
@@ -385,7 +385,7 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 	}
 
 	if !valid {
-		return "", args, fmt.Errorf("Unable to build UPDATE clause, at least one key needed.")
+		return "", args, fmt.Errorf("unable to build UPDATE clause, at least one key needed")
 	}
 
 	args = append(args, pk_value)
@@ -472,7 +472,7 @@ func (db *DB) saveRow(table string, data interface{}) error {
 	pk := info.onlyPrimaryKey()
 
 	if pk == nil {
-		return fmt.Errorf("Save needs a struct with exactly one 'pk' field.")
+		return fmt.Errorf("save needs a struct with exactly one 'pk' field")
 	}
 
 	pk_value, ok := values[pk.dbName]
