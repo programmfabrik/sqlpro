@@ -16,18 +16,18 @@ import (
 
 var ErrQueryReturnedZeroRows error = errors.New("Query returned 0 rows.")
 
-// structInfo is a map to fieldInfo by db_name
+// structInfo is a map to fieldInfo by dbName
 type structInfo map[string]*fieldInfo
 
-func (si structInfo) hasDbName(db_name string) bool {
-	_, ok := si[db_name]
+func (si structInfo) hasDbName(dbName string) bool {
+	_, ok := si[dbName]
 	return ok
 }
 
-func (si structInfo) primaryKey(db_name string) bool {
-	fieldInfo, ok := si[db_name]
+func (si structInfo) primaryKey(dbName string) bool {
+	fieldInfo, ok := si[dbName]
 	if !ok {
-		panic(fmt.Sprintf("isPrimaryKey: db_name %s not found.", db_name))
+		panic(fmt.Sprintf("isPrimaryKey: dbName %s not found.", dbName))
 	}
 	return fieldInfo.primaryKey
 }

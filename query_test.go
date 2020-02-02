@@ -54,10 +54,10 @@ type testRow struct {
 }
 
 type testRowPtr struct {
-	A_P *int64   `db:"a_p,omitempty"`
-	B_P *string  `db:"b_p,omitempty"`
-	C_P *string  `db:"c_p,omitempty"`
-	D_P *float64 `db:"d_p,omitempty"`
+	AP *int64   `db:"a_p,omitempty"`
+	BP *string  `db:"b_p,omitempty"`
+	CP *string  `db:"c_p,omitempty"`
+	DP *float64 `db:"d_p,omitempty"`
 }
 
 type myStruct struct {
@@ -384,7 +384,7 @@ func TestStandard(t *testing.T) {
 	defer rows.Close()
 
 	rows.Next()
-	err = rows.Scan(&row.B_P, &row.C_P, &row.D_P, &json0, &json1)
+	err = rows.Scan(&row.BP, &row.CP, &row.DP, &json0, &json1)
 	if err != nil {
 		t.Error(err)
 	}
@@ -400,7 +400,7 @@ func TestQueryPtr(t *testing.T) {
 
 	// this needs to be set <nil> by sqlpro
 	s := "henk"
-	row.C_P = &s
+	row.CP = &s
 
 	err := db.Query(&row, "SELECT a AS a_p, b AS b_p, c AS c_p, d AS d_p FROM test ORDER BY a LIMIT 1")
 
@@ -408,20 +408,20 @@ func TestQueryPtr(t *testing.T) {
 		t.Error(err)
 	}
 
-	if row.B_P == nil || *row.B_P != "foo" {
-		t.Errorf("*row.B_P != 'foo'")
+	if row.BP == nil || *row.BP != "foo" {
+		t.Errorf("*row.BP != 'foo'")
 	}
 
-	if row.A_P == nil || *row.A_P != 1 {
-		t.Errorf("*row.A_P != 1")
+	if row.AP == nil || *row.AP != 1 {
+		t.Errorf("*row.AP != 1")
 	}
 
-	if row.C_P == nil || *row.C_P != "" {
-		t.Errorf("row.C_P != nil")
+	if row.CP == nil || *row.CP != "" {
+		t.Errorf("row.CP != nil")
 	}
 
-	if row.D_P != nil {
-		t.Errorf("row.D_P != nil")
+	if row.DP != nil {
+		t.Errorf("row.DP != nil")
 	}
 
 }
@@ -851,28 +851,28 @@ func TestReplaceArgs(t *testing.T) {
 
 	db2 := New(db.DB)
 
-	int_args := []int64{1, 3, 4, 5}
-	string_args := []string{"a", "b", "c"}
+	intArgs := []int64{1, 3, 4, 5}
+	stringArgs := []string{"a", "b", "c"}
 
 	db2.PlaceholderMode = QUESTION
 
 	runPlaceholderTests(t, db2, []phTest{
 		// sql, args, expected, err?
 		phTest{"SELECT * FROM @ WHERE id IN ?", ifcArr{"test", []int64{-1, -2, -3}}, `SELECT * FROM "test" WHERE id IN (?,?,?)`, false, 3},
-		phTest{"ID IN ?", ifcArr{int_args}, "ID IN (?,?,?,?)", false, 4},
+		phTest{"ID IN ?", ifcArr{intArgs}, "ID IN (?,?,?,?)", false, 4},
 		phTest{"ID IN '??'", ifcArr{}, "ID IN '?'", false, 0},
 		phTest{"ID = ?", ifcArr{"hen'k"}, "ID = ?", false, 1},
 		phTest{"ID = ?", ifcArr{5}, "ID = ?", false, 1},
 		phTest{"ID IN '''", ifcArr{}, "ID IN '''", false, 0},
 		phTest{"ID IN '?'''", ifcArr{}, "ID IN '?'''", true, 0},
-		phTest{"ID IN '??''' WHERE ?", ifcArr{int_args}, "ID IN '?''' WHERE (?,?,?,?)", false, 4},
-		phTest{"ID IN ?", ifcArr{string_args}, "ID IN (?,?,?)", false, 3},
+		phTest{"ID IN '??''' WHERE ?", ifcArr{intArgs}, "ID IN '?''' WHERE (?,?,?,?)", false, 4},
+		phTest{"ID IN ?", ifcArr{stringArgs}, "ID IN (?,?,?)", false, 3},
 	})
 
 	db2.PlaceholderMode = DOLLAR
 
 	runPlaceholderTests(t, db2, []phTest{
-		phTest{"ID IN ?", ifcArr{int_args}, "ID IN ($1,$2,$3,$4)", false, 4},
+		phTest{"ID IN ?", ifcArr{intArgs}, "ID IN ($1,$2,$3,$4)", false, 4},
 	})
 
 }

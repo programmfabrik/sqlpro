@@ -82,24 +82,24 @@ func (db *DB) Insert(table string, data interface{}) error {
 	if !structMode {
 		for i := 0; i < rv.Len(); i++ {
 			row := reflect.Indirect(rv.Index(i))
-			insert_id, structInfo, err := db.insertStruct(table, row.Interface())
+			insertId, structInfo, err := db.insertStruct(table, row.Interface())
 			if err != nil {
 				return err
 			}
 			pk := structInfo.onlyPrimaryKey()
 			if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
-				setPrimaryKey(row.FieldByName(pk.name), insert_id)
+				setPrimaryKey(row.FieldByName(pk.name), insertId)
 			}
 		}
 	} else {
-		insert_id, structInfo, err := db.insertStruct(table, rv.Interface())
+		insertId, structInfo, err := db.insertStruct(table, rv.Interface())
 		if err != nil {
 			return err
 		}
 		pk := structInfo.onlyPrimaryKey()
-		// log.Printf("PK: %d", insert_id)
+		// log.Printf("PK: %d", insertId)
 		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 && rv.CanAddr() {
-			setPrimaryKey(rv.FieldByName(pk.name), insert_id)
+			setPrimaryKey(rv.FieldByName(pk.name), insertId)
 		}
 	}
 
@@ -145,7 +145,7 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 		return fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
 	}
 
-	key_map := make(map[string]*fieldInfo, 0)
+	keyMap := make(map[string]*fieldInfo, 0)
 	rows := make([]map[string]interface{}, 0)
 
 	if rv.Len() == 0 {
@@ -163,19 +163,19 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 
 		rows = append(rows, values)
 		for key := range values {
-			key_map[key] = structInfo[key]
+			keyMap[key] = structInfo[key]
 		}
 	}
 
 	insert := strings.Builder{} // make([]string, 0)
-	keys := make([]string, 0, len(key_map))
+	keys := make([]string, 0, len(keyMap))
 
 	insert.WriteString("INSERT INTO ")
 	insert.WriteString(db.Esc(table))
 	insert.WriteString(" (")
 
 	idx := 0
-	for key := range key_map {
+	for key := range keyMap {
 		if idx > 0 {
 			insert.WriteRune(',')
 		}
@@ -195,7 +195,7 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 			if idx2 > 0 {
 				insert.WriteRune(',')
 			}
-			insert.WriteString(db.EscValueForInsert(row[key], key_map[key]))
+			insert.WriteString(db.EscValueForInsert(row[key], keyMap[key]))
 		}
 		insert.WriteRune(')')
 	}
@@ -224,7 +224,7 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 		return fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
 	}
 
-	key_map := make(map[string]*fieldInfo, 0)
+	keyMap := make(map[string]*fieldInfo, 0)
 	rows := make([]map[string]interface{}, 0)
 
 	if rv.Len() == 0 {
@@ -242,7 +242,7 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 
 		rows = append(rows, values)
 		for key := range values {
-			key_map[key] = structInfo[key]
+			keyMap[key] = structInfo[key]
 		}
 	}
 
@@ -251,8 +251,8 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 		return sqlError(err, "BEGIN TRANSACTION", []interface{}{})
 	}
 
-	keys := make([]string, 0, len(key_map))
-	for key := range key_map {
+	keys := make([]string, 0, len(keyMap))
+	for key := range keyMap {
 		keys = append(keys, key)
 	}
 
@@ -262,7 +262,7 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 	}
 
 	for _, row := range rows {
-		values := make([]interface{}, 0, len(key_map))
+		values := make([]interface{}, 0, len(keyMap))
 		for _, key := range keys {
 			values = append(values, row[key])
 		}
@@ -302,23 +302,23 @@ func (db *DB) insertStruct(table string, row interface{}) (int64, structInfo, er
 		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
 			sql = sql + " RETURNING " + db.Esc(pk.dbName)
 
-			var insert_id int64 = 0
-			err := db.Query(&insert_id, sql, args...)
+			var insertId int64 = 0
+			err := db.Query(&insertId, sql, args...)
 			if err != nil {
 				return 0, nil, err
 			}
-			// log.Printf("Returning ID: %d", insert_id)
-			return insert_id, info, nil
+			// log.Printf("Returning ID: %d", insertId)
+			return insertId, info, nil
 		}
 	}
 
 	// log.Printf("SQL: %s Debug: %v", sql, db.Debug)
-	insert_id, err := db.exec(1, sql, args...)
+	insertId, err := db.exec(1, sql, args...)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	return insert_id, info, nil
+	return insertId, info, nil
 }
 
 func (db *DB) insertClauseFromValues(table string, values map[string]interface{}, info structInfo) (string, []interface{}, error) {
@@ -341,9 +341,9 @@ func (db *DB) insertClauseFromValues(table string, values map[string]interface{}
 func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []interface{}, error) {
 
 	var (
-		valid    bool
-		args     []interface{}
-		pk_value interface{}
+		valid   bool
+		args    []interface{}
+		pkValue interface{}
 	)
 
 	values, structInfo, err := db.valuesFromStruct(row)
@@ -364,8 +364,8 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 	for key, value := range values {
 		if structInfo.primaryKey(key) {
 			// skip primary keys for update
-			pk_value = db.nullValue(value, structInfo[key])
-			if pk_value == nil {
+			pkValue = db.nullValue(value, structInfo[key])
+			if pkValue == nil {
 				return "", args, fmt.Errorf("Unable to build UPDATE clause with <nil> key: %s", key)
 			}
 			where.WriteString(db.Esc(key))
@@ -388,7 +388,7 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 		return "", args, fmt.Errorf("Unable to build UPDATE clause, at least one key needed.")
 	}
 
-	args = append(args, pk_value)
+	args = append(args, pkValue)
 
 	// Add where clause
 	return update.String() + where.String(), args, nil
@@ -475,8 +475,8 @@ func (db *DB) saveRow(table string, data interface{}) error {
 		return fmt.Errorf("Save needs a struct with exactly one 'pk' field.")
 	}
 
-	pk_value, ok := values[pk.dbName]
-	if !ok || isZero(pk_value) {
+	pkValue, ok := values[pk.dbName]
+	if !ok || isZero(pkValue) {
 		return db.Insert(table, data)
 	} else {
 		return db.Update(table, data)

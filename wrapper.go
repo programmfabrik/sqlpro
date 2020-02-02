@@ -68,7 +68,7 @@ func New(dbWrap dbWrappable) *DB {
 	db = new(DB)
 	db.DB = dbWrap
 
-	// DEFAULTs for sqlite
+	// defaults for sqlite
 	db.PlaceholderMode = QUESTION
 	db.PlaceholderValue = '?'
 	db.PlaceholderEscape = '\\'
@@ -220,26 +220,26 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 	if err != nil {
 		return 0, debugError(sqlError(err, execSql0, newArgs))
 	}
-	row_count, err := result.RowsAffected()
+	rowCount, err := result.RowsAffected()
 	if err != nil {
 		return 0, err
 	}
 
 	if expRows == -1 {
-		return row_count, nil
+		return rowCount, nil
 	}
 
-	if row_count != expRows {
-		return 0, debugError(fmt.Errorf("Exec affected only %d out of %d.", row_count, expRows))
+	if rowCount != expRows {
+		return 0, debugError(fmt.Errorf("Exec affected only %d out of %d.", rowCount, expRows))
 	}
 
 	if !db.SupportsLastInsertId {
 		return 0, nil
 	}
 
-	last_insert_id, err := result.LastInsertId()
+	lastInsertId, err := result.LastInsertId()
 	if err != nil {
 		return 0, debugError(err)
 	}
-	return last_insert_id, nil
+	return lastInsertId, nil
 }
