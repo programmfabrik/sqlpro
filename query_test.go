@@ -54,10 +54,10 @@ type testRow struct {
 }
 
 type testRowPtr struct {
-	AP *int64   `db:"a_p,omitempty"`
-	BP *string  `db:"b_p,omitempty"`
-	CP *string  `db:"c_p,omitempty"`
-	DP *float64 `db:"d_p,omitempty"`
+	Ap *int64   `db:"a_p,omitempty"`
+	Bp *string  `db:"b_p,omitempty"`
+	Cp *string  `db:"c_p,omitempty"`
+	Dp *float64 `db:"d_p,omitempty"`
 }
 
 type myStruct struct {
@@ -384,7 +384,7 @@ func TestStandard(t *testing.T) {
 	defer rows.Close()
 
 	rows.Next()
-	err = rows.Scan(&row.BP, &row.CP, &row.DP, &json0, &json1)
+	err = rows.Scan(&row.Bp, &row.Cp, &row.Dp, &json0, &json1)
 	if err != nil {
 		t.Error(err)
 	}
@@ -400,7 +400,7 @@ func TestQueryPtr(t *testing.T) {
 
 	// this needs to be set <nil> by sqlpro
 	s := "henk"
-	row.CP = &s
+	row.Cp = &s
 
 	err := db.Query(&row, "SELECT a AS a_p, b AS b_p, c AS c_p, d AS d_p FROM test ORDER BY a LIMIT 1")
 
@@ -408,20 +408,20 @@ func TestQueryPtr(t *testing.T) {
 		t.Error(err)
 	}
 
-	if row.BP == nil || *row.BP != "foo" {
-		t.Errorf("*row.BP != 'foo'")
+	if row.Bp == nil || *row.Bp != "foo" {
+		t.Errorf("*row.Bp != 'foo'")
 	}
 
-	if row.AP == nil || *row.AP != 1 {
-		t.Errorf("*row.AP != 1")
+	if row.Ap == nil || *row.Ap != 1 {
+		t.Errorf("*row.Ap != 1")
 	}
 
-	if row.CP == nil || *row.CP != "" {
-		t.Errorf("row.CP != nil")
+	if row.Cp == nil || *row.Cp != "" {
+		t.Errorf("row.Cp != nil")
 	}
 
-	if row.DP != nil {
-		t.Errorf("row.DP != nil")
+	if row.Dp != nil {
+		t.Errorf("row.Dp != nil")
 	}
 
 }
