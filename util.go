@@ -4,20 +4,25 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
-	"errors"
+	"log"
+	"net/url"
+	"sync"
+
 	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
-	"golang.org/x/xerrors"
+	"github.com/pkg/errors"
 )
 
 var ErrQueryReturnedZeroRows error = errors.New("Query returned 0 rows.")
 
 // structInfo is a map to fieldInfo by db_name
 type structInfo map[string]*fieldInfo
+
+var execMutexes = map[string]*sync.Mutex{}
 
 func (si structInfo) hasDbName(db_name string) bool {
 	_, ok := si[db_name]
@@ -98,7 +103,7 @@ func (nj *NullJson) Scan(value interface{}) error {
 		nj.Valid = true
 		return nil
 	default:
-		return xerrors.Errorf(`sqlpro.NullJson.Scan: Unable to scan type "%T"`, value)
+		return errors.Errorf(`sqlpro.NullJson.Scan: Unable to scan type "%T"`, value)
 	}
 }
 
@@ -126,7 +131,7 @@ func (nj *NullRawMessage) Scan(value interface{}) error {
 		nj.Valid = true
 		return nil
 	default:
-		return xerrors.Errorf("sqlpro.NullRawMessage.Scan: Unable to Scan type %T", value)
+		return errors.Errorf("sqlpro.NullRawMessage.Scan: Unable to Scan type %T", value)
 	}
 }
 
@@ -339,7 +344,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 					case int64:
 						sb.WriteString(strconv.FormatInt(v, 10))
 					default:
-						return "", nil, xerrors.Errorf("Unable to add type: %T in slice placeholder. Can only add string and int64", item)
+						return "", nil, errors.Errorf("Unable to add type: %T in slice placeholder. Can only add string and int64", item)
 					}
 				} else {
 					newArgs = append(newArgs, db.nullValue(item, fi))
@@ -496,11 +501,38 @@ func argsToString(args ...interface{}) string {
 	return sb.String()
 }
 
+func (db *DB) lock() {
+	if !db.UseExecLock || db.holdsLock {
+		return
+	}
+
+	// logrus.Infof("%s Getting write lock.", db.mutexKey)
+	execMutexes[db.mutexKey].Lock()
+	db.holdsLock = true
+	// logrus.Infof("%s Got write lock.", db.mutexKey)
+}
+
+func (db *DB) unlock() {
+	if db.holdsLock {
+		// logrus.Infof("%s Unlock write lock.", db.mutexKey)
+		execMutexes[db.mutexKey].Unlock()
+		db.holdsLock = false
+	} else {
+		// logrus.Infof("%s Unlock no lock.", db.mutexKey)
+	}
+}
+
 func (db *DB) Close() error {
 	if db.sqlDB == nil {
 		panic("sqlpro.DB.Close: Unable to close, use Open to initialize the wrapper.")
 	}
-	// log.Printf("sqlpro.Close: %p %s %s", db.DB, db.Driver, db.DSN)
+
+	switch db.Driver {
+	case "sqlite3":
+		defer db.unlock()
+	}
+
+	log.Printf("%s sqlpro.Close: %s", db, db.DSN)
 	return db.sqlDB.Close()
 }
 
@@ -545,12 +577,19 @@ func Open(driverS, dsn string) (*DB, error) {
 		wrapper.PlaceholderMode = DOLLAR
 		wrapper.UseReturningForLastId = true
 		wrapper.SupportsLastInsertId = false
+		wrapper.UseExecLock = false
 	case SQLITE3:
+		dsnUrl, err := url.Parse(dsn)
+		if err == nil {
+			wrapper.mutexKey = dsnUrl.Path
+			if execMutexes[wrapper.mutexKey] == nil {
+				execMutexes[wrapper.mutexKey] = &sync.Mutex{}
+			}
+		}
 	default:
-		return nil, xerrors.Errorf("sqlpro.Open: Unsupported driver '%s'.", driver)
+		return nil, errors.Errorf("sqlpro.Open: Unsupported driver '%s'.", driver)
 	}
 
-	// log.Printf("sqlpro.Open: %p %s %s", wrapper.DB, driver, dsn)
 	return wrapper, nil
 }
 

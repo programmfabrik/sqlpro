@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -25,7 +24,9 @@ func (js jsonStore) Value() (driver.Value, error) {
 	if js.Field == "" && js.Field2 == "" {
 		return nil, nil
 	}
+
 	return json.Marshal(js)
+
 }
 
 func (js *jsonStore) Scan(value interface{}) error {
@@ -93,18 +94,16 @@ func cleanup() {
 
 func TestMain(m *testing.M) {
 
-	var (
-		err error
-	)
+	var err error
 
 	cleanup()
 
-	dbWrap, err := sql.Open("sqlite3", "./test.db")
+	db, err = Open("sqlite3", "./test.db?_foreign_keys=1&_busy_timeout=1000")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = dbWrap.Exec(`
+	err = db.Exec(`
 	CREATE TABLE test(
 		a INTEGER PRIMARY KEY AUTOINCREMENT,
 		b TEXT,
@@ -120,8 +119,6 @@ func TestMain(m *testing.M) {
 		cleanup()
 		log.Fatal(err)
 	}
-
-	db = New(dbWrap)
 
 	exitCode := m.Run()
 	cleanup()
@@ -371,12 +368,12 @@ func TestStandard(t *testing.T) {
 
 	s := jsonStore{"Henk", "Torsten"}
 
-	_, err = db.DB.Exec("UPDATE test SET f = ? WHERE a = 2", s)
+	_, err = db.db.Exec("UPDATE test SET f = ? WHERE a = 2", s)
 	if err != nil {
 		t.Error(err)
 	}
 
-	rows, err := db.DB.Query("SELECT b AS b_p, c AS c_p, d AS d_p, f, f FROM test ORDER BY a LIMIT 1 OFFSET 1")
+	rows, err := db.db.Query("SELECT b AS b_p, c AS c_p, d AS d_p, f, f FROM test ORDER BY a LIMIT 1 OFFSET 1")
 	if err != nil {
 		t.Error(err)
 	}
@@ -639,7 +636,9 @@ func TestQueryIntStruct(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected ErrQueryReturnedZeroRows.")
 	}
-	if !errors.Is(err, ErrQueryReturnedZeroRows) {
+
+	// Make sure the error is not wrapped
+	if err != ErrQueryReturnedZeroRows {
 		t.Errorf("Expected ErrQueryReturnedZeroRows, got: %w", err)
 	}
 }
@@ -849,7 +848,7 @@ type ifcArr []interface{}
 
 func TestReplaceArgs(t *testing.T) {
 
-	db2 := New(db.DB)
+	db2 := New(db.db)
 
 	int_args := []int64{1, 3, 4, 5}
 	string_args := []string{"a", "b", "c"}

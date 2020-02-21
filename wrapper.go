@@ -2,7 +2,6 @@ package sqlpro
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -10,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/olekukonko/tablewriter"
-	"golang.org/x/xerrors"
+	"github.com/pkg/errors"
 )
 
 type dbDriver string
@@ -20,19 +19,30 @@ const POSTGRES = "postgres"
 const SQLITE3 = "sqlite3"
 
 type DB struct {
-	DB                    dbWrappable
+	db                    dbWrappable
 	sqlDB                 *sql.DB // this can be <nil>
 	sqlTx                 *sql.Tx // this can be <nil>
 	Debug                 bool
+	DebugExec             bool
+	DebugQuery            bool
 	PlaceholderMode       PlaceholderMode
 	PlaceholderEscape     rune
 	PlaceholderValue      rune
 	PlaceholderKey        rune
+	UseExecLock           bool
 	MaxPlaceholder        int
 	UseReturningForLastId bool
 	SupportsLastInsertId  bool
 	Driver                dbDriver
 	DSN                   string
+
+	mutexKey  string
+	holdsLock bool
+	transID   int
+}
+
+func (db *DB) String() string {
+	return fmt.Sprintf("[%s, %p]", db.Driver, db)
 }
 
 type DebugLevel int
@@ -66,14 +76,16 @@ func New(dbWrap dbWrappable) *DB {
 		db *DB
 	)
 	db = new(DB)
-	db.DB = dbWrap
+	db.db = dbWrap
 
 	// DEFAULTs for sqlite
 	db.PlaceholderMode = QUESTION
 	db.PlaceholderValue = '?'
 	db.PlaceholderEscape = '\\'
 	db.PlaceholderKey = '@'
+	db.DebugExec = false
 	db.MaxPlaceholder = 100
+	db.UseExecLock = true
 	db.SupportsLastInsertId = true
 	db.UseReturningForLastId = false
 
@@ -113,9 +125,9 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 
 	// log.Printf("RowMode: %s %v", targetValue.Type().Kind(), rowMode)
 
-	rows, err = db.DB.Query(query0, newArgs...)
+	rows, err = db.db.Query(query0, newArgs...)
 	if err != nil {
-		return debugError(sqlError(err, query0, newArgs))
+		return debugError(db.sqlError(err, query0, newArgs))
 	}
 
 	switch target.(type) {
@@ -131,7 +143,7 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 		return debugError(err)
 	}
 
-	if db.Debug && !strings.HasPrefix(query, "INSERT INTO") {
+	if (db.Debug || db.DebugQuery) && !strings.HasPrefix(query, "INSERT INTO") {
 		// log.Printf("Query: %s Args: %v", query, args)
 		err = db.PrintQuery(query, args...)
 		if err != nil {
@@ -159,9 +171,9 @@ func (db *DB) PrintQuery(query string, args ...interface{}) error {
 
 	query0, newArgs, err = db.replaceArgs(query, args...)
 
-	rows, err = db.DB.Query(query0, newArgs...)
+	rows, err = db.db.Query(query0, newArgs...)
 	if err != nil {
-		return sqlError(err, query0, newArgs)
+		return db.sqlError(err, query0, newArgs)
 	}
 	cols, _ := rows.Columns()
 	defer rows.Close()
@@ -172,7 +184,7 @@ func (db *DB) PrintQuery(query string, args ...interface{}) error {
 		return err
 	}
 
-	fmt.Fprint(os.Stdout, sqlDebug(query0, newArgs))
+	fmt.Fprint(os.Stdout, db.sqlDebug(query0, newArgs))
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader(cols)
 	table.AppendBulk(data)
@@ -182,64 +194,19 @@ func (db *DB) PrintQuery(query string, args ...interface{}) error {
 }
 
 func debugError(err error) error {
-	if !errors.Is(err, ErrQueryReturnedZeroRows) {
+	if err != ErrQueryReturnedZeroRows {
 		log.Printf("sqlpro error: %s", err)
 	}
 	return err
 }
 
-func sqlError(err error, sqlS string, args []interface{}) error {
-	return xerrors.Errorf("Database Error: %s\n\n%sDatabase Error: %s", err, sqlDebug(sqlS, args), err)
+func (db *DB) sqlError(err error, sqlS string, args []interface{}) error {
+	return errors.Wrapf(err, "Database Error: %s", db.sqlDebug(sqlS, args))
 }
 
-func sqlDebug(sqlS string, args []interface{}) string {
+func (db *DB) sqlDebug(sqlS string, args []interface{}) string {
 	// if len(sqlS) > 1000 {
 	// 	return fmt.Sprintf("SQL:\n %s \nARGS:\n%v\n", sqlS[0:1000], argsToString(args...))
 	// }
-	return fmt.Sprintf("SQL:\n %s \nARGS:\n%v\n", sqlS, argsToString(args...))
-}
-
-// exec wraps DB.Exec and automatically checks the number of Affected rows
-// if expRows == -1, the check is skipped
-func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, error) {
-	var (
-		execSql0 string
-		err      error
-		newArgs  []interface{}
-	)
-
-	if db.Debug {
-		log.Printf("SQL: %s\nARGS:\n%s", execSql, argsToString(args...))
-	}
-
-	execSql0, newArgs, err = db.replaceArgs(execSql, args...)
-	if err != nil {
-		return 0, err
-	}
-	result, err := db.DB.Exec(execSql0, newArgs...)
-	if err != nil {
-		return 0, debugError(sqlError(err, execSql0, newArgs))
-	}
-	row_count, err := result.RowsAffected()
-	if err != nil {
-		return 0, err
-	}
-
-	if expRows == -1 {
-		return row_count, nil
-	}
-
-	if row_count != expRows {
-		return 0, debugError(fmt.Errorf("Exec affected only %d out of %d.", row_count, expRows))
-	}
-
-	if !db.SupportsLastInsertId {
-		return 0, nil
-	}
-
-	last_insert_id, err := result.LastInsertId()
-	if err != nil {
-		return 0, debugError(err)
-	}
-	return last_insert_id, nil
+	return fmt.Sprintf("%s SQL:\n %s \nARGS:\n%v\n", db, sqlS, argsToString(args...))
 }

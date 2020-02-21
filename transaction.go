@@ -1,5 +1,11 @@
 package sqlpro
 
+import (
+	"log"
+)
+
+var transID = 0
+
 // Begin starts a new transaction, this panics if
 // the wrapper was not initialized using "Open"
 func (db *DB) Begin() (*DB, error) {
@@ -15,11 +21,23 @@ func (db *DB) Begin() (*DB, error) {
 	}
 
 	db2 := *db
+
 	db2.sqlTx, err = db.sqlDB.Begin()
 	if err != nil {
 		return nil, err
 	}
-	db2.DB = db2.sqlTx
+	db2.db = db2.sqlTx
+
+	db2.lock()
+
+	db2.transID = transID
+	transID++
+
+	// logrus.Infof("[%p] BEGIN #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
+
+	if db.DebugExec || db.Debug {
+		log.Printf("%s BEGIN: %s sql.DB: %p", db, &db2, db.sqlDB)
+	}
 
 	return &db2, nil
 }
@@ -28,6 +46,14 @@ func (db *DB) Commit() error {
 	if db.sqlTx == nil {
 		panic("sqlpro.DB.Commit: Unable to call Commit without Transaction.")
 	}
+
+	if db.DebugExec || db.Debug {
+		log.Printf("%s COMMIT sql.DB: %p", db, db.sqlDB)
+	}
+
+	// logrus.Infof("[%p] COMMIT #%d %s", db.sqlDB, db.transID, aurora.Blue(fmt.Sprintf("%p", db.sqlTx)))
+
+	defer db.unlock()
 	return db.sqlTx.Commit()
 }
 
@@ -35,5 +61,13 @@ func (db *DB) Rollback() error {
 	if db.sqlTx == nil {
 		panic("sqlpro.DB.Rollback: Unable to call Rollback without Transaction.")
 	}
+
+	if db.DebugExec || db.Debug {
+		log.Printf("%s ROLLBACK", db)
+	}
+
+	// logrus.Infof("[%p] ROLLBACK #%d %s", db.sqlDB, db.transID, aurora.Blue(fmt.Sprintf("%p", db.sqlTx)))
+
+	defer db.unlock()
 	return db.sqlTx.Rollback()
 }

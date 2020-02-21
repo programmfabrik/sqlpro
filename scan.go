@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"time"
 
-	"golang.org/x/xerrors"
+	"github.com/pkg/errors"
 )
 
 type voidScan struct{}
@@ -167,7 +167,7 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 				newData := reflect.New(fieldV.Type())
 				err = json.Unmarshal((*v).Data, newData.Interface())
 				if err != nil {
-					return xerrors.Errorf("Error unmarshalling data: %s", err)
+					return errors.Wrap(err, "Error unmarshalling data.")
 				}
 				fieldV.Set(reflect.Indirect(reflect.Value(newData)))
 			} else {
@@ -294,6 +294,10 @@ func Scan(target interface{}, rows *sql.Rows) error {
 		rowMode     bool
 		err         error
 	)
+
+	if target == nil {
+		panic(fmt.Errorf("Scan: target must not be <nil>."))
+	}
 
 	v := reflect.ValueOf(target)
 	if v.Type().Kind() != reflect.Ptr {

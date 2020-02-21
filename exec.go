@@ -1,13 +1,15 @@
 package sqlpro
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"reflect"
 	"strings"
 
 	"github.com/lib/pq"
-	"golang.org/x/xerrors"
+	"github.com/pkg/errors"
 )
 
 // checkData checks that the given data is either one of:
@@ -158,7 +160,7 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 		values, structInfo, err := db.valuesFromStruct(row)
 
 		if err != nil {
-			return xerrors.Errorf("sqlpro.InsertBulk error: %w", err)
+			return errors.Wrap(err, "sqlpro.InsertBulk error.")
 		}
 
 		rows = append(rows, values)
@@ -200,9 +202,9 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 		insert.WriteRune(')')
 	}
 
-	_, err = db.DB.Exec(insert.String())
+	_, err = db.exec(int64(len(rows)), insert.String())
 	if err != nil {
-		return sqlError(err, insert.String(), []interface{}{})
+		return db.sqlError(err, insert.String(), []interface{}{})
 	}
 
 	return nil
@@ -237,7 +239,7 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 		values, structInfo, err := db.valuesFromStruct(row)
 
 		if err != nil {
-			return xerrors.Errorf("sqlpro.InsertBulk error: %w", err)
+			return errors.Wrap(err, "sqlpro.InsertBulk error.")
 		}
 
 		rows = append(rows, values)
@@ -248,7 +250,7 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 
 	txn, err := db.sqlDB.Begin()
 	if err != nil {
-		return sqlError(err, "BEGIN TRANSACTION", []interface{}{})
+		return db.sqlError(err, "BEGIN TRANSACTION", []interface{}{})
 	}
 
 	keys := make([]string, 0, len(key_map))
@@ -258,7 +260,7 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 
 	stmt, err := txn.Prepare(pq.CopyIn(table, keys...))
 	if err != nil {
-		return sqlError(err, "Prepare", []interface{}{})
+		return db.sqlError(err, "Prepare", []interface{}{})
 	}
 
 	for _, row := range rows {
@@ -268,18 +270,18 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 		}
 		_, err = stmt.Exec(values...)
 		if err != nil {
-			return sqlError(err, "Exec", values)
+			return db.sqlError(err, "Exec", values)
 		}
 	}
 
 	_, err = stmt.Exec()
 	if err != nil {
-		return sqlError(err, "Exec DONE", []interface{}{})
+		return db.sqlError(err, "Exec DONE", []interface{}{})
 	}
 
 	err = txn.Commit()
 	if err != nil {
-		return sqlError(err, "Commit DONE", []interface{}{})
+		return db.sqlError(err, "Commit DONE", []interface{}{})
 	}
 
 	return nil
@@ -524,7 +526,7 @@ func (db *DB) valuesFromStruct(data interface{}) (map[string]interface{}, struct
 				actualData, err = json.Marshal(actualData)
 			}
 			if err != nil {
-				return nil, nil, xerrors.Errorf("Unable to marshal as data as json: %s", err)
+				return nil, nil, errors.Wrap(err, "Unable to marshal as data as json.")
 			}
 		}
 
@@ -540,4 +542,80 @@ func isZero(x interface{}) bool {
 		return true
 	}
 	return reflect.DeepEqual(x, reflect.Zero(reflect.TypeOf(x)).Interface())
+}
+
+// exec wraps DB.Exec and automatically checks the number of Affected rows
+// if expRows == -1, the check is skipped
+func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, error) {
+	var (
+		execSql0 string
+		err      error
+		newArgs  []interface{}
+	)
+
+	if db.Debug || db.DebugExec {
+		log.Printf("%s SQL: %s\nARGS:\n%s", db, execSql, argsToString(args...))
+	}
+
+	// db.lock()
+	// if db.sqlTx == nil {
+	// 	defer db.unlock()
+	// }
+
+	if len(args) > 0 {
+		execSql0, newArgs, err = db.replaceArgs(execSql, args...)
+		if err != nil {
+			return 0, err
+		}
+	} else {
+		execSql0 = execSql
+		newArgs = args
+	}
+
+	// logrus.Infof("[%p] EXEC #%d %s %s", db.sqlDB, db.transID, aurora.Green(fmt.Sprintf("%p", db.db)), execSql0[0:10])
+
+	var result sql.Result
+
+	// tries := 0
+	for {
+		result, err = db.db.Exec(execSql0, newArgs...)
+		if err != nil {
+			// pp.Println(err)
+			// sqlErr, ok := err.(sqlite3.Error)
+			// if ok {
+			// 	if sqlErr.Code == 5 { // SQLITE_BUSY
+			// 		tries++
+			// 		time.Sleep(50 * time.Millisecond)
+			// 		if tries < 3 {
+			// 			continue
+			// 		}
+			// 	}
+			// }
+			return 0, debugError(db.sqlError(err, execSql0, newArgs))
+		}
+		break
+	}
+
+	row_count, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	if expRows == -1 {
+		return row_count, nil
+	}
+
+	if row_count != expRows {
+		return 0, debugError(fmt.Errorf("Exec affected only %d out of %d.", row_count, expRows))
+	}
+
+	if !db.SupportsLastInsertId {
+		return 0, nil
+	}
+
+	last_insert_id, err := result.LastInsertId()
+	if err != nil {
+		return 0, debugError(err)
+	}
+	return last_insert_id, nil
 }
