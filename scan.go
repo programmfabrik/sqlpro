@@ -78,6 +78,11 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 		}
 	}
 
+	switch targetV.Interface().(type) {
+	case time.Time, *time.Time:
+		isStruct = false
+	}
+
 	// if target.Kind() == reflect.Ptr {
 	// 	log.Printf("Target: %v %s %v %s", target.IsValid(), target.Type(), target.IsNil(), target.Type().Elem().Kind())
 	// }
@@ -87,6 +92,8 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 	for idx, col := range cols {
 
 		skip := false
+
+		// logrus.Infof("%v %v %v %v", idx, col, isStruct, isSlice)
 
 		if isStruct {
 			finfo, ok := info[col]
@@ -137,7 +144,7 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 		case *bool, bool:
 			data[idx] = &sql.NullBool{}
 			nullValueByIdx[idx] = fieldV
-		case *time.Time:
+		case time.Time, *time.Time:
 			data[idx] = &NullTime{}
 			nullValueByIdx[idx] = fieldV
 		default:
@@ -259,7 +266,7 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 			case *sql.NullBool:
 				fieldV.SetBool((*v).Bool)
 			}
-		case *time.Time:
+		case time.Time:
 			switch v := data[idx].(type) {
 			case *NullTime:
 				if (*v).Valid {
@@ -268,7 +275,18 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 					fieldV.Set(reflect.Zero(fieldV.Type()))
 				}
 			default:
-				panic("Unable to read back null.")
+				panic("Unable to read back time.Time.")
+			}
+		case *time.Time:
+			switch v := data[idx].(type) {
+			case *NullTime:
+				if (*v).Valid {
+					fieldV.Set(reflect.ValueOf(&(*v).Time))
+				} else {
+					fieldV.Set(reflect.Zero(fieldV.Type()))
+				}
+			default:
+				panic("Unable to read back *time.Time.")
 			}
 		default:
 			panic("Unable to read back null.")

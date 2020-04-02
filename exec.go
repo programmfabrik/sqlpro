@@ -186,7 +186,7 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 		idx++
 	}
 
-	insert.WriteString(") VALUES ")
+	insert.WriteString(") VALUES \n")
 
 	for idx, row := range rows {
 		if idx > 0 {
@@ -200,6 +200,7 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 			insert.WriteString(db.EscValueForInsert(row[key], key_map[key]))
 		}
 		insert.WriteRune(')')
+		insert.WriteRune('\n')
 	}
 
 	_, err = db.exec(int64(len(rows)), insert.String())
@@ -408,6 +409,10 @@ func (db *DB) Update(table string, data interface{}) error {
 		update     string
 		args       []interface{}
 	)
+
+	if db == nil {
+		panic("Update on <nil> handle.")
+	}
 
 	rv, structMode, err = checkData(data)
 	if err != nil {

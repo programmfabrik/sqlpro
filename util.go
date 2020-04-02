@@ -56,7 +56,7 @@ func (si structInfo) onlyPrimaryKey() *fieldInfo {
 }
 
 type NullTime struct {
-	Time  *time.Time
+	Time  time.Time
 	Valid bool
 }
 
@@ -64,12 +64,19 @@ type NullTime struct {
 func (ni *NullTime) Scan(value interface{}) error {
 	// log.Printf("Scan %T %s", value, value)
 	if value == nil {
-		ni.Time, ni.Valid = nil, false
+		ni.Time, ni.Valid = time.Time{}, false
 		return nil
 	}
+	var err error
 	switch v := value.(type) {
 	case time.Time:
-		ni.Time = &v
+		ni.Time = v
+		ni.Valid = true
+	case string:
+		ni.Time, err = time.Parse(time.RFC3339Nano, v)
+		if err != nil {
+			return errors.Wrap(err, "NullTime.Scan")
+		}
 		ni.Valid = true
 	default:
 		return fmt.Errorf("Unable to scan time: %T %s", value, value)

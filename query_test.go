@@ -10,8 +10,13 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	sqlite3 "github.com/mattn/go-sqlite3"
+	"github.com/stretchr/testify/assert"
 )
+
+func init() {
+	sqlite3.SQLiteTimestampFormats[0] = time.RFC3339Nano
+}
 
 var db *DB
 
@@ -226,6 +231,64 @@ func TestInsertStruct(t *testing.T) {
 	}
 }
 
+func TestTime(t *testing.T) {
+
+	now := time.Now()
+
+	type timeStruct struct {
+		B *time.Time `db:"b"`
+		C string     `db:"c"`
+	}
+
+	type timeStruct2 struct {
+		B time.Time `db:"b"`
+		C string    `db:"c"`
+	}
+
+	tr := timeStruct{B: &now, C: "timetest"}
+
+	err := db.Insert("test", tr)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	// timeStr := timeStruct{}
+	// err = db.Query(&timeStr, "SELECT b FROM test WHERE c='timetest'")
+	// if !assert.NoError(t, err) {
+	// 	return
+	// }
+	// assert.Equal(t, now.Format(time.RFC3339Nano), timeStr.B.Format(time.RFC3339Nano))
+
+	// timeStr2 := timeStruct2{}
+	// err = db.Query(&timeStr2, "SELECT b FROM test WHERE c='timetest'")
+	// if !assert.NoError(t, err) {
+	// 	return
+	// }
+	// assert.Equal(t, now.Format(time.RFC3339Nano), timeStr2.B.Format(time.RFC3339Nano))
+
+	time1 := &time.Time{}
+	err = db.Query(&time1, "SELECT b FROM test WHERE c='timetest'")
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, now.Format(time.RFC3339Nano), time1.Format(time.RFC3339Nano))
+
+	time2 := &time.Time{}
+	err = db.Query(&time2, "SELECT b FROM test WHERE c='timetest'")
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, now.Format(time.RFC3339Nano), time2.Format(time.RFC3339Nano))
+
+	time3 := time.Time{}
+	err = db.Query(&time3, "SELECT b FROM test WHERE c='timetest'")
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, now.Format(time.RFC3339Nano), time3.Format(time.RFC3339Nano))
+
+}
+
 func TestUpdate(t *testing.T) {
 	tr := &testRow{
 		A: 1,
@@ -335,11 +398,11 @@ func TestQueryReal(t *testing.T) {
 func TestQueryStruct(t *testing.T) {
 	row := testRow{}
 	db.MaxPlaceholder = 1
-	err := db.Query(&row, "SELECT * FROM test WHERE A IN ? LIMIT 1", []int64{1, 2, 3, 4, 5, 6, 7, 8})
+	err := db.Query(&row, "SELECT * FROM test WHERE a IN ? LIMIT 1", []int64{1, 2, 3, 4, 5, 6, 7, 8})
 	if err != nil {
 		t.Error(err)
 	}
-	err = db.Query(&row, "SELECT * FROM test WHERE B IN ? LIMIT 1", []string{"henk", "horst", "torsten"})
+	err = db.Query(&row, "SELECT * FROM test WHERE b IN ? LIMIT 1", []string{"henk", "horst", "torsten"})
 	if err != nil {
 		t.Error(err)
 	}
