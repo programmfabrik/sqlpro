@@ -28,12 +28,15 @@ func (db *DB) Begin() (*DB, error) {
 	}
 	db2.db = db2.sqlTx
 
+	// pflib.Pln("[%p] BEFORE BEGIN #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
+	// debug.PrintStack()
+
 	db2.lock()
 
 	db2.transID = transID
 	transID++
 
-	// logrus.Infof("[%p] BEGIN #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
+	// pflib.Pln("[%p] BEGIN #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
 
 	if db.DebugExec || db.Debug {
 		log.Printf("%s BEGIN: %s sql.DB: %p", db, &db2, db.sqlDB)
@@ -51,7 +54,7 @@ func (db *DB) Commit() error {
 		log.Printf("%s COMMIT sql.DB: %p", db, db.sqlDB)
 	}
 
-	// logrus.Infof("[%p] COMMIT #%d %s", db.sqlDB, db.transID, aurora.Blue(fmt.Sprintf("%p", db.sqlTx)))
+	// pflib.Pln("[%p] COMMIT #%d %s", db.sqlDB, db.transID, aurora.Blue(fmt.Sprintf("%p", db.sqlTx)))
 
 	defer db.unlock()
 	return db.sqlTx.Commit()
@@ -66,7 +69,8 @@ func (db *DB) Rollback() error {
 		log.Printf("%s ROLLBACK", db)
 	}
 
-	// logrus.Infof("[%p] ROLLBACK #%d %s", db.sqlDB, db.transID, aurora.Blue(fmt.Sprintf("%p", db.sqlTx)))
+	// debug.PrintStack()
+	// pflib.Pln("[%p] ROLLBACK #%d %s", db.sqlDB, db.transID, aurora.Blue(fmt.Sprintf("%p", db.sqlTx)))
 
 	defer db.unlock()
 	return db.sqlTx.Rollback()
