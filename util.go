@@ -172,11 +172,26 @@ func (fi *fieldInfo) allowNull() bool {
 
 // getStructInfo returns a per dbName to fieldInfo map
 func getStructInfo(t reflect.Type) structInfo {
-	si := make(structInfo, 0)
+	si := structInfo{}
 
-	// log.Printf("name: %s %d", t, t.NumField())
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
+		if field.Anonymous {
+			if field.Type.Kind() == reflect.Ptr {
+				panic(fmt.Sprintf("Unable to scan into embedded pointer type %q", field.Type))
+			}
+
+			for dbName, info := range getStructInfo(field.Type) {
+				si[dbName] = info
+			}
+		}
+	}
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if field.Anonymous {
+			continue
+		}
 
 		dbTag := field.Tag.Get("db")
 		if dbTag == "" {
@@ -252,6 +267,9 @@ func getStructInfo(t reflect.Type) structInfo {
 
 		si[info.dbName] = &info
 	}
+
+	// logrus.Infof("%s %#v", t.Name(), si)
+
 	return si
 }
 
