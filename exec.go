@@ -596,7 +596,7 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 			// 		}
 			// 	}
 			// }
-			return 0, debugError(db.sqlError(err, execSql0, newArgs))
+			return 0, db.debugError(db.sqlError(err, execSql0, newArgs))
 		}
 		break
 	}
@@ -611,7 +611,7 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 	}
 
 	if row_count != expRows {
-		return 0, debugError(fmt.Errorf("Exec affected only %d out of %d.", row_count, expRows))
+		return 0, db.debugError(fmt.Errorf("Exec affected only %d out of %d.", row_count, expRows))
 	}
 
 	if !db.SupportsLastInsertId {
@@ -620,7 +620,7 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 
 	last_insert_id, err := result.LastInsertId()
 	if err != nil {
-		return 0, debugError(err)
+		return 0, db.debugError(err)
 	}
 	return last_insert_id, nil
 }

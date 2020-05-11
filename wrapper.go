@@ -39,6 +39,7 @@ type DB struct {
 	mutexKey  string
 	holdsLock bool
 	transID   int
+	LastError error // This is set to the last error
 }
 
 func (db *DB) String() string {
@@ -127,7 +128,7 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 
 	rows, err = db.db.Query(query0, newArgs...)
 	if err != nil {
-		return debugError(db.sqlError(err, query0, newArgs))
+		return db.debugError(db.sqlError(err, query0, newArgs))
 	}
 
 	switch target.(type) {
@@ -140,7 +141,7 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 
 	err = Scan(target, rows)
 	if err != nil {
-		return debugError(err)
+		return db.debugError(err)
 	}
 
 	if (db.Debug || db.DebugQuery) && !strings.HasPrefix(query, "INSERT INTO") {
@@ -193,9 +194,10 @@ func (db *DB) PrintQuery(query string, args ...interface{}) error {
 	return nil
 }
 
-func debugError(err error) error {
+func (db *DB) debugError(err error) error {
 	if err != ErrQueryReturnedZeroRows {
 		log.Printf("sqlpro error: %s", err)
+		db.LastError = err
 	}
 	return err
 }
