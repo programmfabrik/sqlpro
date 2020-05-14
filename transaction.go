@@ -4,7 +4,7 @@ import (
 	"log"
 )
 
-var transID = 0
+// var transID = 0
 
 // Begin starts a new transaction, this panics if
 // the wrapper was not initialized using "Open"
@@ -22,19 +22,20 @@ func (db *DB) Begin() (*DB, error) {
 
 	db2 := *db
 
+	db2.lock()
+
+	// db2.transID = transID
+	// transID++
+
+	// pflib.Pln("[%p] BEFORE BEGIN #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
+
 	db2.sqlTx, err = db.sqlDB.Begin()
 	if err != nil {
 		return nil, err
 	}
 	db2.db = db2.sqlTx
 
-	// pflib.Pln("[%p] BEFORE BEGIN #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
 	// debug.PrintStack()
-
-	db2.lock()
-
-	db2.transID = transID
-	transID++
 
 	// pflib.Pln("[%p] BEGIN #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
 

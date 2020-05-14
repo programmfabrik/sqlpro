@@ -38,7 +38,7 @@ type DB struct {
 
 	mutexKey  string
 	holdsLock bool
-	transID   int
+	// transID   int
 	LastError error // This is set to the last error
 }
 
