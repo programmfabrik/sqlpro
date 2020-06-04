@@ -289,7 +289,6 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 }
 
 func (db *DB) insertStruct(table string, row interface{}) (int64, structInfo, error) {
-
 	values, info, err := db.valuesFromStruct(row)
 	if err != nil {
 		return 0, nil, err
@@ -304,7 +303,6 @@ func (db *DB) insertStruct(table string, row interface{}) (int64, structInfo, er
 		pk := info.onlyPrimaryKey()
 		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
 			sql = sql + " RETURNING " + db.Esc(pk.dbName)
-
 			var insert_id int64 = 0
 			err := db.Query(&insert_id, sql, args...)
 			if err != nil {
@@ -561,11 +559,6 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 	if db.Debug || db.DebugExec {
 		log.Printf("%s SQL: %s\nARGS:\n%s", db, execSql, argsToString(args...))
 	}
-
-	// db.lock()
-	// if db.sqlTx == nil {
-	// 	defer db.unlock()
-	// }
 
 	if len(args) > 0 {
 		execSql0, newArgs, err = db.replaceArgs(execSql, args...)

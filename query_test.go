@@ -103,7 +103,7 @@ func TestMain(m *testing.M) {
 
 	cleanup()
 
-	db, err = Open("sqlite3", "./test.db?_foreign_keys=1&_busy_timeout=1000")
+	db, err = Open("sqlite3", "./test.db?_foreign_keys=1&_journal=wal&_busy_timeout=1000")
 	if err != nil {
 		log.Fatal(err)
 	}

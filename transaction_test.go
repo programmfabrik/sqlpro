@@ -66,7 +66,7 @@ func readRow(db *DB) error {
 
 func saveRow(db *DB, i int) error {
 	data := []*testRow{
-		&testRow{
+		{
 			B: "concurrency",
 			C: fmt.Sprintf("concurrency %d", i),
 			F: jsonStore{"Yo", "Mama"},
@@ -78,28 +78,58 @@ func saveRow(db *DB, i int) error {
 func TestConcurrency(t *testing.T) {
 	wg := sync.WaitGroup{}
 
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 20; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
 
-			db2, err := db.Begin()
+			db2, err := db.BeginWrite()
 			if err != nil {
 				t.Error(err)
+				return
+			}
+
+			err = readRow(db2)
+			if err != nil {
+				t.Error(err)
+				db2.Rollback()
 				return
 			}
 
 			err = saveRow(db2, i)
 			if err != nil {
 				t.Error(err)
+				db2.Rollback()
 				return
 			}
 
-			time.Sleep(2 * time.Second)
+			// time.Sleep(2 * time.Second)
+			db2.Commit()
+		}(i)
+	}
+
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+
+			db2, err := db.BeginRead()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+
+			err = readRow(db2)
+			if err != nil {
+				t.Error(err)
+				db2.Rollback()
+				return
+			}
+
+			// time.Sleep(2 * time.Second)
 			db2.Commit()
 		}(i)
 	}
 
 	wg.Wait()
-
 }

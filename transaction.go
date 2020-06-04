@@ -6,9 +6,10 @@ import (
 
 // var transID = 0
 
-// Begin starts a new transaction, this panics if
+// txBegin starts a new transaction, this panics if
 // the wrapper was not initialized using "Open"
-func (db *DB) Begin() (*DB, error) {
+// it gets passed a flag which states if there will be any writes
+func (db *DB) txBegin(wMode bool) (*DB, error) {
 	var (
 		err error
 	)
@@ -22,8 +23,6 @@ func (db *DB) Begin() (*DB, error) {
 
 	db2 := *db
 
-	db2.lock()
-
 	// db2.transID = transID
 	// transID++
 
@@ -32,6 +31,22 @@ func (db *DB) Begin() (*DB, error) {
 	db2.sqlTx, err = db.sqlDB.Begin()
 	if err != nil {
 		return nil, err
+	}
+
+	// If tx starts in write mode, special treatment may be in place
+	if wMode {
+		switch db.Driver {
+
+		// In case of write mode tx for SQLITE driver
+		// There's the need to start it as immediate so it gets a lock
+		// Not implemented in driver, therefore this raw SQL workaround
+		case SQLITE3:
+			log.Printf("%s IMMEDIATE TX: %s sql.DB: %p", db, &db2, db.sqlDB)
+			_, err = db2.sqlTx.Exec("ROLLBACK; BEGIN IMMEDIATE")
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	db2.db = db2.sqlTx
 
@@ -46,6 +61,21 @@ func (db *DB) Begin() (*DB, error) {
 	return &db2, nil
 }
 
+// Begin starts a new transaction, defaults to write mode
+func (db *DB) Begin() (*DB, error) {
+	return db.txBegin(true)
+}
+
+// BeginWrite starts a new transaction, write mode
+func (db *DB) BeginWrite() (*DB, error) {
+	return db.Begin()
+}
+
+// BeginRead starts a new transaction, read-only mode
+func (db *DB) BeginRead() (*DB, error) {
+	return db.txBegin(false)
+}
+
 func (db *DB) Commit() error {
 	if db.sqlTx == nil {
 		panic("sqlpro.DB.Commit: Unable to call Commit without Transaction.")
@@ -57,7 +87,6 @@ func (db *DB) Commit() error {
 
 	// pflib.Pln("[%p] COMMIT #%d %s", db.sqlDB, db.transID, aurora.Blue(fmt.Sprintf("%p", db.sqlTx)))
 
-	defer db.unlock()
 	return db.sqlTx.Commit()
 }
 
@@ -73,6 +102,5 @@ func (db *DB) Rollback() error {
 	// debug.PrintStack()
 	// pflib.Pln("[%p] ROLLBACK #%d %s", db.sqlDB, db.transID, aurora.Blue(fmt.Sprintf("%p", db.sqlTx)))
 
-	defer db.unlock()
 	return db.sqlTx.Rollback()
 }
