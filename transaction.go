@@ -64,14 +64,9 @@ func (db *DB) txBegin(wMode bool) (*DB, error) {
 	return &db2, nil
 }
 
-// Begin starts a new transaction, defaults to write mode
+// Begin starts a new transaction, defaulting to write mode for backwards compatibility
 func (db *DB) Begin() (*DB, error) {
 	return db.txBegin(true)
-}
-
-// BeginWrite starts a new transaction, write mode
-func (db *DB) BeginWrite() (*DB, error) {
-	return db.Begin()
 }
 
 // BeginRead starts a new transaction, read-only mode

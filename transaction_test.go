@@ -83,7 +83,7 @@ func TestConcurrency(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 
-			db2, err := db.BeginWrite()
+			db2, err := db.Begin()
 			if err != nil {
 				t.Error(err)
 				return
