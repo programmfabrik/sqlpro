@@ -133,3 +133,33 @@ func TestConcurrency(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestReadOnlyMode(t *testing.T) {
+
+	db2, err := db.BeginRead()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	err = readRow(db2)
+	if err != nil {
+		t.Error(err)
+		db2.Rollback()
+		return
+	}
+
+	err = db2.Insert("test", []*testRow{
+		{
+			B: "readonly",
+			F: jsonStore{"no", "writes"},
+		},
+	})
+	if err == nil {
+		t.Error("Expected error trying to write when a transaction is not in write mode")
+		db2.Rollback()
+		return
+	}
+
+	db2.Commit()
+}

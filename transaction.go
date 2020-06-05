@@ -33,6 +33,9 @@ func (db *DB) txBegin(wMode bool) (*DB, error) {
 		return nil, err
 	}
 
+	// Set flag so we allow or not write operations
+	db2.txWriteMode = wMode
+
 	// If tx starts in write mode, special treatment may be in place
 	if wMode {
 		switch db.Driver {
@@ -41,7 +44,7 @@ func (db *DB) txBegin(wMode bool) (*DB, error) {
 		// There's the need to start it as immediate so it gets a lock
 		// Not implemented in driver, therefore this raw SQL workaround
 		case SQLITE3:
-			log.Printf("%s IMMEDIATE TX: %s sql.DB: %p", db, &db2, db.sqlDB)
+			// log.Printf("%s IMMEDIATE TX: %s sql.DB: %p", db, &db2, db.sqlDB)
 			_, err = db2.sqlTx.Exec("ROLLBACK; BEGIN IMMEDIATE")
 			if err != nil {
 				return nil, err

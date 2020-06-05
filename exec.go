@@ -302,6 +302,12 @@ func (db *DB) insertStruct(table string, row interface{}) (int64, structInfo, er
 	if db.UseReturningForLastId {
 		pk := info.onlyPrimaryKey()
 		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
+
+			// Fail if transaction present and not in write mode
+			if db.sqlTx != nil && !db.txWriteMode {
+				return 0, nil, fmt.Errorf("[%s] Trying to write into read-only transaction: %s", db, sql)
+			}
+
 			sql = sql + " RETURNING " + db.Esc(pk.dbName)
 			var insert_id int64 = 0
 			err := db.Query(&insert_id, sql, args...)
@@ -558,6 +564,11 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 
 	if db.Debug || db.DebugExec {
 		log.Printf("%s SQL: %s\nARGS:\n%s", db, execSql, argsToString(args...))
+	}
+
+	// Fail if transaction present and not in write mode
+	if db.sqlTx != nil && !db.txWriteMode {
+		return 0, fmt.Errorf("[%s] Trying to write into read-only transaction: %s", db, execSql)
 	}
 
 	if len(args) > 0 {

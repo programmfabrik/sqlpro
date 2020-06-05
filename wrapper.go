@@ -35,6 +35,8 @@ type DB struct {
 	Driver                dbDriver
 	DSN                   string
 
+	txWriteMode           bool
+
 	// transID   int
 	LastError error // This is set to the last error
 }
