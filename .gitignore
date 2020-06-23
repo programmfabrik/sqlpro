@@ -19,3 +19,4 @@ tmpl.go
 /fylrstore
 /commands/server/assets/tmpl.go
 .vscode
+test.db*

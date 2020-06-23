@@ -5,8 +5,6 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"log"
-	"net/url"
-	"sync"
 
 	"fmt"
 	"reflect"
@@ -21,8 +19,6 @@ var ErrQueryReturnedZeroRows error = errors.New("Query returned 0 rows.")
 
 // structInfo is a map to fieldInfo by db_name
 type structInfo map[string]*fieldInfo
-
-var execMutexes = map[string]*sync.Mutex{}
 
 func (si structInfo) hasDbName(db_name string) bool {
 	_, ok := si[db_name]
@@ -526,35 +522,10 @@ func argsToString(args ...interface{}) string {
 	return sb.String()
 }
 
-func (db *DB) lock() {
-	if !db.UseExecLock || db.holdsLock {
-		return
-	}
-
-	// logrus.Infof("%s Getting write lock.", db.mutexKey)
-	execMutexes[db.mutexKey].Lock()
-	db.holdsLock = true
-	// logrus.Infof("%s Got write lock.", db.mutexKey)
-}
-
-func (db *DB) unlock() {
-	if db.holdsLock {
-		// logrus.Infof("%s Unlock write lock.", db.mutexKey)
-		execMutexes[db.mutexKey].Unlock()
-		db.holdsLock = false
-	} else {
-		// logrus.Infof("%s Unlock no lock.", db.mutexKey)
-	}
-}
 
 func (db *DB) Close() error {
 	if db.sqlDB == nil {
 		panic("sqlpro.DB.Close: Unable to close, use Open to initialize the wrapper.")
-	}
-
-	switch db.Driver {
-	case "sqlite3":
-		defer db.unlock()
 	}
 
 	log.Printf("%s sqlpro.Close: %s", db, db.DSN)
@@ -602,15 +573,7 @@ func Open(driverS, dsn string) (*DB, error) {
 		wrapper.PlaceholderMode = DOLLAR
 		wrapper.UseReturningForLastId = true
 		wrapper.SupportsLastInsertId = false
-		wrapper.UseExecLock = false
 	case SQLITE3:
-		dsnUrl, err := url.Parse(dsn)
-		if err == nil {
-			wrapper.mutexKey = dsnUrl.Path
-			if execMutexes[wrapper.mutexKey] == nil {
-				execMutexes[wrapper.mutexKey] = &sync.Mutex{}
-			}
-		}
 	default:
 		return nil, errors.Errorf("sqlpro.Open: Unsupported driver '%s'.", driver)
 	}

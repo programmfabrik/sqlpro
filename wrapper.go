@@ -29,15 +29,14 @@ type DB struct {
 	PlaceholderEscape     rune
 	PlaceholderValue      rune
 	PlaceholderKey        rune
-	UseExecLock           bool
 	MaxPlaceholder        int
 	UseReturningForLastId bool
 	SupportsLastInsertId  bool
 	Driver                dbDriver
 	DSN                   string
 
-	mutexKey  string
-	holdsLock bool
+	txWriteMode           bool
+
 	// transID   int
 	LastError error // This is set to the last error
 }
@@ -86,7 +85,6 @@ func New(dbWrap dbWrappable) *DB {
 	db.PlaceholderKey = '@'
 	db.DebugExec = false
 	db.MaxPlaceholder = 100
-	db.UseExecLock = true
 	db.SupportsLastInsertId = true
 	db.UseReturningForLastId = false
 
