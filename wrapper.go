@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/pkg/errors"
@@ -35,7 +36,7 @@ type DB struct {
 	Driver                dbDriver
 	DSN                   string
 
-	txWriteMode           bool
+	txWriteMode bool
 
 	// transID   int
 	LastError error // This is set to the last error
@@ -170,6 +171,7 @@ func (db *DB) PrintQuery(query string, args ...interface{}) error {
 
 	query0, newArgs, err = db.replaceArgs(query, args...)
 
+	start := time.Now()
 	rows, err = db.db.Query(query0, newArgs...)
 	if err != nil {
 		return db.sqlError(err, query0, newArgs)
@@ -187,6 +189,7 @@ func (db *DB) PrintQuery(query string, args ...interface{}) error {
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader(cols)
 	table.AppendBulk(data)
+	table.SetCaption(true, "Took: "+time.Since(start).String())
 	table.Render()
 
 	return nil
