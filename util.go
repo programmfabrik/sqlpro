@@ -362,10 +362,22 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 					switch v := item.(type) {
 					case string:
 						sb.WriteString(db.EscValue(v))
+					case *string:
+						if v == nil {
+							sb.WriteString("null")
+						} else {
+							sb.WriteString(db.EscValue(*v))
+						}
 					case int64:
 						sb.WriteString(strconv.FormatInt(v, 10))
+					case *int64:
+						if v == nil {
+							sb.WriteString("null")
+						} else {
+							sb.WriteString(strconv.FormatInt(*v, 10))
+						}
 					default:
-						return "", nil, errors.Errorf("Unable to add type: %T in slice placeholder. Can only add string and int64", item)
+						return "", nil, errors.Errorf("Unable to add type: %T in slice placeholder. Can only add string, *string, int64, and *int64", item)
 					}
 				} else {
 					newArgs = append(newArgs, db.nullValue(item, fi))
@@ -521,7 +533,6 @@ func argsToString(args ...interface{}) string {
 	}
 	return sb.String()
 }
-
 
 func (db *DB) Close() error {
 	if db.sqlDB == nil {
