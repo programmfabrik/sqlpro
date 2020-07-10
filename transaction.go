@@ -2,9 +2,11 @@ package sqlpro
 
 import (
 	"log"
+	"sync"
 )
 
 // var transID = 0
+var txBeginMutex = sync.Mutex{}
 
 // txBegin starts a new transaction, this panics if
 // the wrapper was not initialized using "Open"
@@ -28,6 +30,12 @@ func (db *DB) txBegin(wMode bool) (*DB, error) {
 
 	// pflib.Pln("[%p] BEFORE BEGIN #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
 
+	// Lock, so we can safely do the sqlite3 ROLLBACK / BEGIN below
+
+	if wMode {
+		txBeginMutex.Lock()
+	}
+
 	db2.sqlTx, err = db.sqlDB.Begin()
 	if err != nil {
 		return nil, err
@@ -50,7 +58,10 @@ func (db *DB) txBegin(wMode bool) (*DB, error) {
 				return nil, err
 			}
 		}
+
+		txBeginMutex.Unlock()
 	}
+
 	db2.db = db2.sqlTx
 
 	// debug.PrintStack()
