@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
-	"log"
 
 	"fmt"
 	"reflect"
@@ -539,7 +538,7 @@ func (db *DB) Close() error {
 		panic("sqlpro.DB.Close: Unable to close, use Open to initialize the wrapper.")
 	}
 
-	log.Printf("%s sqlpro.Close: %s", db, db.DSN)
+	// log.Printf("%s sqlpro.Close: %s", db, db.DSN)
 	return db.sqlDB.Close()
 }
 
@@ -550,7 +549,7 @@ func Open(driverS, dsn string) (*DB, error) {
 
 	switch driverS {
 	default:
-		return nil, fmt.Errorf(`Unknown driver "%s"`, driver)
+		return nil, fmt.Errorf(`Unknown driver "%s"`, driverS)
 	case "sqlite3":
 		driver = SQLITE3
 	case "postgres":

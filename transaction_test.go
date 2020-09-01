@@ -163,3 +163,32 @@ func TestReadOnlyMode(t *testing.T) {
 
 	db2.Commit()
 }
+
+func TestTwoConnections(t *testing.T) {
+
+	db2, err := db.BeginRead()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		println("Getting TX")
+		db3, err := db.Begin()
+		if err != nil {
+			db3.Rollback()
+		} else {
+			db3.Commit()
+		}
+		println("Got TX")
+		wg.Done()
+
+	}()
+
+	wg.Wait()
+	db2.Commit()
+
+}

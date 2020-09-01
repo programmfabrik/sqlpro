@@ -38,6 +38,9 @@ func (db *DB) txBegin(wMode bool) (*DB, error) {
 
 	db2.sqlTx, err = db.sqlDB.Begin()
 	if err != nil {
+		if wMode {
+			txBeginMutex.Unlock()
+		}
 		return nil, err
 	}
 
@@ -55,6 +58,9 @@ func (db *DB) txBegin(wMode bool) (*DB, error) {
 			// log.Printf("%s IMMEDIATE TX: %s sql.DB: %p", db, &db2, db.sqlDB)
 			_, err = db2.sqlTx.Exec("ROLLBACK; BEGIN IMMEDIATE")
 			if err != nil {
+				if wMode {
+					txBeginMutex.Unlock()
+				}
 				return nil, err
 			}
 		}
