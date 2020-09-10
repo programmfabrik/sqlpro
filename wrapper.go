@@ -155,6 +155,9 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 }
 
 func (db *DB) Exec(execSql string, args ...interface{}) error {
+	if execSql == "" {
+		return db.debugError(errors.New("Exec: Empty query"))
+	}
 	_, err := db.exec(-1, execSql, args...)
 	return err
 }
