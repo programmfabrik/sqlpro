@@ -28,12 +28,17 @@ func (db *DB) txBegin(wMode bool) (*DB, error) {
 	// db2.transID = transID
 	// transID++
 
-	// pflib.Pln("[%p] BEFORE BEGIN #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
-
 	// Lock, so we can safely do the sqlite3 ROLLBACK / BEGIN below
 
 	if wMode {
+		// pflib.Pln("[%p] BEFORE BEGIN WRITE #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
+		// println(runtime.Caller(3))
+		// println(runtime.Caller(4))
 		txBeginMutex.Lock()
+		// } else {
+		// 	pflib.Pln("[%p] BEFORE BEGIN READ #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
+		// 	println(runtime.Caller(3))
+		// 	println(runtime.Caller(4))
 	}
 
 	db2.sqlTx, err = db.sqlDB.Begin()
@@ -64,7 +69,7 @@ func (db *DB) txBegin(wMode bool) (*DB, error) {
 				return nil, err
 			}
 		}
-
+		// db2.txStart = time.Now()
 		txBeginMutex.Unlock()
 	}
 
@@ -102,6 +107,10 @@ func (db *DB) Commit() error {
 
 	// pflib.Pln("[%p] COMMIT #%d %s", db.sqlDB, db.transID, aurora.Blue(fmt.Sprintf("%p", db.sqlTx)))
 
+	// if db.txWriteMode {
+	// 	log.Printf("COMMIT WRITE #%d took %s", db.transID, time.Since(db.txStart))
+	// }
+
 	return db.sqlTx.Commit()
 }
 
@@ -116,6 +125,10 @@ func (db *DB) Rollback() error {
 
 	// debug.PrintStack()
 	// pflib.Pln("[%p] ROLLBACK #%d %s", db.sqlDB, db.transID, aurora.Blue(fmt.Sprintf("%p", db.sqlTx)))
+
+	// if db.txWriteMode {
+	// 	log.Printf("ROLLBACK WRITE #%d took %s", db.transID, time.Since(db.txStart))
+	// }
 
 	return db.sqlTx.Rollback()
 }

@@ -37,7 +37,7 @@ type DB struct {
 	DSN                   string
 
 	txWriteMode bool
-
+	// txStart     time.Time
 	// transID   int
 	LastError error // This is set to the last error
 }
