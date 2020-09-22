@@ -101,6 +101,10 @@ func (db *DB) Commit() error {
 		panic("sqlpro.DB.Commit: Unable to call Commit without Transaction.")
 	}
 
+	defer func() {
+		db.sqlTx = nil
+	}()
+
 	if db.DebugExec || db.Debug {
 		log.Printf("%s COMMIT sql.DB: %p", db, db.sqlDB)
 	}
@@ -119,6 +123,7 @@ func (db *DB) Commit() error {
 	for _, f := range db.txAfterCommit {
 		f()
 	}
+
 	return nil
 
 }
@@ -127,6 +132,10 @@ func (db *DB) Rollback() error {
 	if db.sqlTx == nil {
 		panic("sqlpro.DB.Rollback: Unable to call Rollback without Transaction.")
 	}
+
+	defer func() {
+		db.sqlTx = nil
+	}()
 
 	if db.DebugExec || db.Debug {
 		log.Printf("%s ROLLBACK", db)
@@ -149,6 +158,13 @@ func (db *DB) Rollback() error {
 	}
 
 	return nil
+}
+
+func (db *DB) ActiveTX() bool {
+	if db == nil {
+		return false
+	}
+	return db.sqlTx != nil
 }
 
 func (db *DB) AfterCommit(f func()) {
