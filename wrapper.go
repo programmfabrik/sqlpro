@@ -40,6 +40,9 @@ type DB struct {
 	// txStart     time.Time
 	// transID   int
 	LastError error // This is set to the last error
+
+	txAfterCommit   []func()
+	txAfterRollback []func()
 }
 
 func (db *DB) String() string {

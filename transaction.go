@@ -86,7 +86,7 @@ func (db *DB) txBegin(wMode bool) (*DB, error) {
 	return &db2, nil
 }
 
-// Begin starts a new transaction, defaulting to write mode for backwards compatibility
+// Begin starts a new transaction, (read-write mode)
 func (db *DB) Begin() (*DB, error) {
 	return db.txBegin(true)
 }
@@ -111,7 +111,16 @@ func (db *DB) Commit() error {
 	// 	log.Printf("COMMIT WRITE #%d took %s", db.transID, time.Since(db.txStart))
 	// }
 
-	return db.sqlTx.Commit()
+	err := db.sqlTx.Commit()
+	if err != nil {
+		return err
+	}
+
+	for _, f := range db.txAfterCommit {
+		f()
+	}
+	return nil
+
 }
 
 func (db *DB) Rollback() error {
@@ -130,5 +139,28 @@ func (db *DB) Rollback() error {
 	// 	log.Printf("ROLLBACK WRITE #%d took %s", db.transID, time.Since(db.txStart))
 	// }
 
-	return db.sqlTx.Rollback()
+	err := db.sqlTx.Rollback()
+	if err != nil {
+		return err
+	}
+
+	for _, f := range db.txAfterRollback {
+		f()
+	}
+
+	return nil
+}
+
+func (db *DB) AfterCommit(f func()) {
+	if db.sqlTx == nil {
+		panic("sqlpro.DB.AfterCommit: Needs Transaction.")
+	}
+	db.txAfterCommit = append(db.txAfterCommit, f)
+}
+
+func (db *DB) AfterRollback(f func()) {
+	if db.sqlTx == nil {
+		panic("sqlpro.DB.AfterRollback: Needs Transaction.")
+	}
+	db.txAfterRollback = append(db.txAfterRollback, f)
 }

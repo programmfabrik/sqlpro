@@ -310,6 +310,9 @@ func (db *DB) insertStruct(table string, row interface{}) (int64, structInfo, er
 
 			sql = sql + " RETURNING " + db.Esc(pk.dbName)
 			var insert_id int64 = 0
+			if db.Debug || db.DebugExec {
+				log.Printf("%s SQL: %s\nARGS:\n%s", db, sql, argsToString(args...))
+			}
 			err := db.Query(&insert_id, sql, args...)
 			if err != nil {
 				return 0, nil, err
