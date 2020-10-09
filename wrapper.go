@@ -46,6 +46,11 @@ type DB struct {
 	txAfterRollback []func()
 }
 
+// DB returns the wrapped sql.DB handle
+func (db *DB) DB() *sql.DB {
+	return db.sqlDB
+}
+
 func (db *DB) String() string {
 	return fmt.Sprintf("[%s, %p]", db.Driver, db)
 }
