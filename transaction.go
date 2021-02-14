@@ -1,6 +1,7 @@
 package sqlpro
 
 import (
+	"context"
 	"log"
 	"sync"
 )
@@ -11,7 +12,7 @@ var txBeginMutex = sync.Mutex{}
 // txBegin starts a new transaction, this panics if
 // the wrapper was not initialized using "Open"
 // it gets passed a flag which states if there will be any writes
-func (db *DB) txBegin(wMode bool) (*DB, error) {
+func (db *DB) txBeginContext(ctx context.Context, wMode bool) (*DB, error) {
 	var (
 		err error
 	)
@@ -41,7 +42,7 @@ func (db *DB) txBegin(wMode bool) (*DB, error) {
 		// 	println(runtime.Caller(4))
 	}
 
-	db2.sqlTx, err = db.sqlDB.Begin()
+	db2.sqlTx, err = db.sqlDB.BeginTx(ctx, nil)
 	if err != nil {
 		if wMode {
 			txBeginMutex.Unlock()
@@ -61,7 +62,7 @@ func (db *DB) txBegin(wMode bool) (*DB, error) {
 		// Not implemented in driver, therefore this raw SQL workaround
 		case SQLITE3:
 			// log.Printf("%s IMMEDIATE TX: %s sql.DB: %p", db, &db2, db.sqlDB)
-			_, err = db2.sqlTx.Exec("ROLLBACK; BEGIN IMMEDIATE")
+			_, err = db2.sqlTx.ExecContext(ctx, "ROLLBACK; BEGIN IMMEDIATE")
 			if err != nil {
 				if wMode {
 					txBeginMutex.Unlock()
@@ -88,12 +89,22 @@ func (db *DB) txBegin(wMode bool) (*DB, error) {
 
 // Begin starts a new transaction, (read-write mode)
 func (db *DB) Begin() (*DB, error) {
-	return db.txBegin(true)
+	return db.txBeginContext(context.Background(), true)
 }
 
 // BeginRead starts a new transaction, read-only mode
 func (db *DB) BeginRead() (*DB, error) {
-	return db.txBegin(false)
+	return db.txBeginContext(context.Background(), false)
+}
+
+// Begin starts a new transaction, (read-write mode)
+func (db *DB) BeginContext(ctx context.Context) (*DB, error) {
+	return db.txBeginContext(ctx, true)
+}
+
+// BeginRead starts a new transaction, read-only mode
+func (db *DB) BeginReadContext(ctx context.Context) (*DB, error) {
+	return db.txBeginContext(ctx, false)
 }
 
 func (db *DB) Commit() error {
@@ -125,7 +136,6 @@ func (db *DB) Commit() error {
 	}
 
 	return nil
-
 }
 
 func (db *DB) Rollback() error {

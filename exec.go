@@ -1,6 +1,7 @@
 package sqlpro
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -54,6 +55,10 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 	return rv, structMode, nil
 }
 
+func (db *DB) Insert(table string, data interface{}) error {
+	return db.InsertContext(context.Background(), table, data)
+}
+
 // Insert takes a table name and a struct and inserts
 // the record in the DB.
 // The given data needs to be:
@@ -69,7 +74,7 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 // result.LastInsertId will be used to set the first primary
 // key column.
 
-func (db *DB) Insert(table string, data interface{}) error {
+func (db *DB) InsertContext(ctx context.Context, table string, data interface{}) error {
 	var (
 		rv         reflect.Value
 		structMode bool
@@ -84,7 +89,7 @@ func (db *DB) Insert(table string, data interface{}) error {
 	if !structMode {
 		for i := 0; i < rv.Len(); i++ {
 			row := reflect.Indirect(rv.Index(i))
-			insert_id, structInfo, err := db.insertStruct(table, row.Interface())
+			insert_id, structInfo, err := db.insertStruct(ctx, table, row.Interface())
 			if err != nil {
 				return err
 			}
@@ -94,7 +99,7 @@ func (db *DB) Insert(table string, data interface{}) error {
 			}
 		}
 	} else {
-		insert_id, structInfo, err := db.insertStruct(table, rv.Interface())
+		insert_id, structInfo, err := db.insertStruct(ctx, table, rv.Interface())
 		if err != nil {
 			return err
 		}
@@ -121,6 +126,10 @@ func setPrimaryKey(rv reflect.Value, id int64) {
 	}
 }
 
+func (db *DB) InsertBulk(table string, data interface{}) error {
+	return db.InsertBulkContext(context.Background(), table, data)
+}
+
 // InsertBulk takes a table name and a slice of struct and inserts
 // the record in the DB with one Exec.
 // The given data needs to be:
@@ -131,7 +140,7 @@ func setPrimaryKey(rv reflect.Value, id int64) {
 // []struct
 //
 // sqlpro will executes one INSERT statement per call.
-func (db *DB) InsertBulk(table string, data interface{}) error {
+func (db *DB) InsertBulkContext(ctx context.Context, table string, data interface{}) error {
 	var (
 		rv         reflect.Value
 		structMode bool
@@ -203,7 +212,7 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 		insert.WriteRune('\n')
 	}
 
-	_, err = db.exec(int64(len(rows)), insert.String())
+	_, err = db.execContext(ctx, int64(len(rows)), insert.String())
 	if err != nil {
 		return db.sqlError(err, insert.String(), []interface{}{})
 	}
@@ -288,7 +297,7 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 	return nil
 }
 
-func (db *DB) insertStruct(table string, row interface{}) (int64, structInfo, error) {
+func (db *DB) insertStruct(ctx context.Context, table string, row interface{}) (int64, structInfo, error) {
 	values, info, err := db.valuesFromStruct(row)
 	if err != nil {
 		return 0, nil, err
@@ -323,7 +332,7 @@ func (db *DB) insertStruct(table string, row interface{}) (int64, structInfo, er
 	}
 
 	// log.Printf("SQL: %s Debug: %v", sql, db.Debug)
-	insert_id, err := db.exec(1, sql, args...)
+	insert_id, err := db.execContext(ctx, 1, sql, args...)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -404,11 +413,15 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 	return update.String() + where.String(), args, nil
 }
 
+func (db *DB) Update(table string, data interface{}) error {
+	return db.UpdateContext(context.Background(), table, data)
+}
+
 // Update updates the given struct or slice of structs
 // The WHERE clause is put together from the "pk" columns.
 // If not all "pk" columns have non empty values, Update returns
 // an error.
-func (db *DB) Update(table string, data interface{}) error {
+func (db *DB) UpdateContext(ctx context.Context, table string, data interface{}) error {
 	var (
 		rv         reflect.Value
 		structMode bool
@@ -431,7 +444,7 @@ func (db *DB) Update(table string, data interface{}) error {
 		if err != nil {
 			return err
 		}
-		_, err = db.exec(1, update, args...)
+		_, err = db.execContext(ctx, 1, update, args...)
 		if err != nil {
 			return err
 		}
@@ -442,7 +455,7 @@ func (db *DB) Update(table string, data interface{}) error {
 			if err != nil {
 				return err
 			}
-			_, err = db.exec(1, update, args...)
+			_, err = db.execContext(ctx, 1, update, args...)
 			if err != nil {
 				return err
 			}
@@ -558,7 +571,7 @@ func isZero(x interface{}) bool {
 
 // exec wraps DB.Exec and automatically checks the number of Affected rows
 // if expRows == -1, the check is skipped
-func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, error) {
+func (db *DB) execContext(ctx context.Context, expRows int64, execSql string, args ...interface{}) (int64, error) {
 	var (
 		execSql0 string
 		err      error
@@ -590,7 +603,7 @@ func (db *DB) exec(expRows int64, execSql string, args ...interface{}) (int64, e
 
 	// tries := 0
 	for {
-		result, err = db.db.Exec(execSql0, newArgs...)
+		result, err = db.db.ExecContext(ctx, execSql0, newArgs...)
 		if err != nil {
 			// pp.Println(err)
 			// sqlErr, ok := err.(sqlite3.Error)

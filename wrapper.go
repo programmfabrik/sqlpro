@@ -1,6 +1,7 @@
 package sqlpro
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/pkg/errors"
+	"github.com/yudai/pp"
 )
 
 type dbDriver string
@@ -51,6 +53,10 @@ func (db *DB) DB() *sql.DB {
 	return db.sqlDB
 }
 
+func (db *DB) TX() *sql.Tx {
+	return db.sqlTx
+}
+
 func (db *DB) String() string {
 	return fmt.Sprintf("[%s, %p]", db.Driver, db)
 }
@@ -76,7 +82,9 @@ const (
 
 type dbWrappable interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
 	Exec(query string, args ...interface{}) (sql.Result, error)
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 }
 
 // NewSqlPro returns a wrapped database handle providing
@@ -116,10 +124,14 @@ func (db *DB) Log() *DB {
 	return &newDB
 }
 
+func (db *DB) Query(target interface{}, query string, args ...interface{}) error {
+	return db.QueryContext(context.Background(), target, query, args...)
+}
+
 // Query runs a query and fills the received rows or row into the target.
 // It is a wrapper method around the
 //
-func (db *DB) Query(target interface{}, query string, args ...interface{}) error {
+func (db *DB) QueryContext(ctx context.Context, target interface{}, query string, args ...interface{}) error {
 	var (
 		rows    *sql.Rows
 		err     error
@@ -154,7 +166,7 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 
 	if (db.Debug || db.DebugQuery) && !strings.HasPrefix(query, "INSERT INTO") {
 		// log.Printf("Query: %s Args: %v", query, args)
-		err = db.PrintQuery(query, args...)
+		err = db.PrintQueryContext(ctx, query, args...)
 		if err != nil {
 			panic(err)
 		}
@@ -164,14 +176,18 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 }
 
 func (db *DB) Exec(execSql string, args ...interface{}) error {
+	return db.ExecContext(context.Background(), execSql, args...)
+}
+
+func (db *DB) ExecContext(ctx context.Context, execSql string, args ...interface{}) error {
 	if execSql == "" {
 		return db.debugError(errors.New("Exec: Empty query"))
 	}
-	_, err := db.exec(-1, execSql, args...)
+	_, err := db.execContext(ctx, -1, execSql, args...)
 	return err
 }
 
-func (db *DB) PrintQuery(query string, args ...interface{}) error {
+func (db *DB) PrintQueryContext(ctx context.Context, query string, args ...interface{}) error {
 	var (
 		rows    *sql.Rows
 		err     error
@@ -184,8 +200,10 @@ func (db *DB) PrintQuery(query string, args ...interface{}) error {
 	query0, newArgs, err = db.replaceArgs(query, args...)
 
 	start := time.Now()
-	rows, err = db.db.Query(query0, newArgs...)
+	rows, err = db.db.QueryContext(ctx, query0, newArgs...)
 	if err != nil {
+		pp.Println(query0)
+		pp.Println(newArgs)
 		return db.sqlError(err, query0, newArgs)
 	}
 	cols, _ := rows.Columns()
