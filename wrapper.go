@@ -37,6 +37,7 @@ type DB struct {
 	SupportsLastInsertId  bool
 	Driver                dbDriver
 	DSN                   string
+	isClosed              bool
 
 	txWriteMode bool
 
