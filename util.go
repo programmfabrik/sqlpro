@@ -537,9 +537,17 @@ func (db *DB) Close() error {
 	if db.sqlDB == nil {
 		panic("sqlpro.DB.Close: Unable to close, use Open to initialize the wrapper.")
 	}
+	db.isClosed = true
 
 	// log.Printf("%s sqlpro.Close: %s", db, db.DSN)
 	return db.sqlDB.Close()
+}
+
+func (db *DB) IsClosed() bool {
+	if db == nil {
+		return true
+	}
+	return db.isClosed
 }
 
 // Open opens a database connection and returns an sqlpro wrap handle

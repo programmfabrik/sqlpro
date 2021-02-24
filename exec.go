@@ -623,7 +623,9 @@ func (db *DB) execContext(ctx context.Context, expRows int64, execSql string, ar
 
 	row_count, err := result.RowsAffected()
 	if err != nil {
-		return 0, err
+		// Ignore the error here, we might get
+		// no RowsAffected available after the empty statement from pq driver
+		// which is ok and not a real error (it happens with empty statements)
 	}
 
 	if expRows == -1 {
