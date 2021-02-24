@@ -190,3 +190,7 @@ func (db *DB) AfterRollback(f func()) {
 	}
 	db.txAfterRollback = append(db.txAfterRollback, f)
 }
+
+func (db *DB) IsWriteMode() bool {
+	return db.txWriteMode
+}
