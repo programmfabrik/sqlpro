@@ -55,8 +55,6 @@ type testRow struct {
 	D float64    `db:"d,omitempty"`
 	E *time.Time `db:"e"`
 	F jsonStore  `db:"f"`
-
-	ignore string
 }
 
 type testRowPtr struct {
@@ -103,7 +101,7 @@ func TestMain(m *testing.M) {
 
 	cleanup()
 
-	db, err = Open("sqlite3", "./test.db?_foreign_keys=1&_journal=wal&_busy_timeout=1000")
+	db, err = Open("sqlite3", "file:./test.db?_foreign_keys=1&_busy_timeout=1000")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -140,18 +138,18 @@ func TestInsertSliceStructPtr(t *testing.T) {
 	now = time.Now()
 
 	data := []*testRow{
-		&testRow{
+		{
 			B: "fooUPDATEME",
 			F: jsonStore{"Yo", "Mama"},
 		},
-		&testRow{
+		{
 			B: "bar",
 			C: "other",
 			D: 1.2345,
 			E: &now,
 			F: jsonStore{"Henk", "Torsten"},
 		},
-		&testRow{
+		{
 			B: "torsten",
 			C: "other",
 			D: 1.2345,
@@ -186,10 +184,10 @@ func TestInsertSliceStructPtr(t *testing.T) {
 
 func TestInsertSliceStruct(t *testing.T) {
 	data := []testRow{
-		testRow{
+		{
 			B: "foo4",
 		},
-		testRow{
+		{
 			B: "bar5",
 			C: "other",
 			D: 1.2345,
@@ -240,31 +238,12 @@ func TestTime(t *testing.T) {
 		C string     `db:"c"`
 	}
 
-	type timeStruct2 struct {
-		B time.Time `db:"b"`
-		C string    `db:"c"`
-	}
-
 	tr := timeStruct{B: &now, C: "timetest"}
 
 	err := db.Insert("test", tr)
 	if !assert.NoError(t, err) {
 		return
 	}
-
-	// timeStr := timeStruct{}
-	// err = db.Query(&timeStr, "SELECT b FROM test WHERE c='timetest'")
-	// if !assert.NoError(t, err) {
-	// 	return
-	// }
-	// assert.Equal(t, now.Format(time.RFC3339Nano), timeStr.B.Format(time.RFC3339Nano))
-
-	// timeStr2 := timeStruct2{}
-	// err = db.Query(&timeStr2, "SELECT b FROM test WHERE c='timetest'")
-	// if !assert.NoError(t, err) {
-	// 	return
-	// }
-	// assert.Equal(t, now.Format(time.RFC3339Nano), timeStr2.B.Format(time.RFC3339Nano))
 
 	time1 := &time.Time{}
 	err = db.Query(&time1, "SELECT b FROM test WHERE c='timetest'")
@@ -302,11 +281,11 @@ func TestUpdate(t *testing.T) {
 
 func TestUpdateMany(t *testing.T) {
 	trs := []*testRow{
-		&testRow{
+		{
 			A: 1,
 			B: "foo",
 		},
-		&testRow{
+		{
 			A: 3,
 			B: "torsten2",
 		},
@@ -320,10 +299,10 @@ func TestUpdateMany(t *testing.T) {
 
 func TestSaveMany(t *testing.T) {
 	trs := []*testRow{
-		&testRow{
+		{
 			B: "henk",
 		},
-		&testRow{
+		{
 			A: 3,
 			B: "torsten3",
 		},
@@ -911,7 +890,7 @@ type ifcArr []interface{}
 
 func TestReplaceArgs(t *testing.T) {
 
-	db2 := New(db.db)
+	db2 := newDB(db.db)
 
 	int_args := []int64{1, 3, 4, 5}
 	string_args := []string{"a", "b", "c"}
@@ -920,21 +899,21 @@ func TestReplaceArgs(t *testing.T) {
 
 	runPlaceholderTests(t, db2, []phTest{
 		// sql, args, expected, err?
-		phTest{"SELECT * FROM @ WHERE id IN ?", ifcArr{"test", []int64{-1, -2, -3}}, `SELECT * FROM "test" WHERE id IN (?,?,?)`, false, 3},
-		phTest{"ID IN ?", ifcArr{int_args}, "ID IN (?,?,?,?)", false, 4},
-		phTest{"ID IN '??'", ifcArr{}, "ID IN '?'", false, 0},
-		phTest{"ID = ?", ifcArr{"hen'k"}, "ID = ?", false, 1},
-		phTest{"ID = ?", ifcArr{5}, "ID = ?", false, 1},
-		phTest{"ID IN '''", ifcArr{}, "ID IN '''", false, 0},
-		phTest{"ID IN '?'''", ifcArr{}, "ID IN '?'''", true, 0},
-		phTest{"ID IN '??''' WHERE ?", ifcArr{int_args}, "ID IN '?''' WHERE (?,?,?,?)", false, 4},
-		phTest{"ID IN ?", ifcArr{string_args}, "ID IN (?,?,?)", false, 3},
+		{"SELECT * FROM @ WHERE id IN ?", ifcArr{"test", []int64{-1, -2, -3}}, `SELECT * FROM "test" WHERE id IN (?,?,?)`, false, 3},
+		{"ID IN ?", ifcArr{int_args}, "ID IN (?,?,?,?)", false, 4},
+		{"ID IN '??'", ifcArr{}, "ID IN '?'", false, 0},
+		{"ID = ?", ifcArr{"hen'k"}, "ID = ?", false, 1},
+		{"ID = ?", ifcArr{5}, "ID = ?", false, 1},
+		{"ID IN '''", ifcArr{}, "ID IN '''", false, 0},
+		{"ID IN '?'''", ifcArr{}, "ID IN '?'''", true, 0},
+		{"ID IN '??''' WHERE ?", ifcArr{int_args}, "ID IN '?''' WHERE (?,?,?,?)", false, 4},
+		{"ID IN ?", ifcArr{string_args}, "ID IN (?,?,?)", false, 3},
 	})
 
 	db2.PlaceholderMode = DOLLAR
 
 	runPlaceholderTests(t, db2, []phTest{
-		phTest{"ID IN ?", ifcArr{int_args}, "ID IN ($1,$2,$3,$4)", false, 4},
+		{"ID IN ?", ifcArr{int_args}, "ID IN ($1,$2,$3,$4)", false, 4},
 	})
 
 }

@@ -26,20 +26,10 @@ func (db *DB) txBeginContext(ctx context.Context, wMode bool) (*DB, error) {
 
 	db2 := *db
 
-	// db2.transID = transID
-	// transID++
-
 	// Lock, so we can safely do the sqlite3 ROLLBACK / BEGIN below
 
 	if wMode {
-		// pflib.Pln("[%p] BEFORE BEGIN WRITE #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
-		// println(runtime.Caller(3))
-		// println(runtime.Caller(4))
 		txBeginMutex.Lock()
-		// } else {
-		// 	pflib.Pln("[%p] BEFORE BEGIN READ #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
-		// 	println(runtime.Caller(3))
-		// 	println(runtime.Caller(4))
 	}
 
 	db2.sqlTx, err = db.sqlDB.BeginTx(ctx, nil)
@@ -55,13 +45,7 @@ func (db *DB) txBeginContext(ctx context.Context, wMode bool) (*DB, error) {
 
 	// If tx starts in write mode, special treatment may be in place
 	if wMode {
-		switch db.Driver {
-
-		// In case of write mode tx for SQLITE driver
-		// There's the need to start it as immediate so it gets a lock
-		// Not implemented in driver, therefore this raw SQL workaround
-		case SQLITE3:
-			// log.Printf("%s IMMEDIATE TX: %s sql.DB: %p", db, &db2, db.sqlDB)
+		if db.Driver == supportedSQLiteDriver {
 			_, err = db2.sqlTx.ExecContext(ctx, "ROLLBACK; BEGIN IMMEDIATE")
 			if err != nil {
 				if wMode {
@@ -70,19 +54,10 @@ func (db *DB) txBeginContext(ctx context.Context, wMode bool) (*DB, error) {
 				return nil, err
 			}
 		}
-		// db2.txStart = time.Now()
 		txBeginMutex.Unlock()
 	}
 
 	db2.db = db2.sqlTx
-
-	// debug.PrintStack()
-
-	// pflib.Pln("[%p] BEGIN #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
-
-	if db.DebugExec || db.Debug {
-		log.Printf("%s BEGIN: %s sql.DB: %p", db, &db2, db.sqlDB)
-	}
 
 	return &db2, nil
 }
@@ -120,12 +95,6 @@ func (db *DB) Commit() error {
 		log.Printf("%s COMMIT sql.DB: %p", db, db.sqlDB)
 	}
 
-	// pflib.Pln("[%p] COMMIT #%d %s", db.sqlDB, db.transID, aurora.Blue(fmt.Sprintf("%p", db.sqlTx)))
-
-	// if db.txWriteMode {
-	// 	log.Printf("COMMIT WRITE #%d took %s", db.transID, time.Since(db.txStart))
-	// }
-
 	err := db.sqlTx.Commit()
 	if err != nil {
 		return err
@@ -150,13 +119,6 @@ func (db *DB) Rollback() error {
 	if db.DebugExec || db.Debug {
 		log.Printf("%s ROLLBACK", db)
 	}
-
-	// debug.PrintStack()
-	// pflib.Pln("[%p] ROLLBACK #%d %s", db.sqlDB, db.transID, aurora.Blue(fmt.Sprintf("%p", db.sqlTx)))
-
-	// if db.txWriteMode {
-	// 	log.Printf("ROLLBACK WRITE #%d took %s", db.transID, time.Since(db.txStart))
-	// }
 
 	err := db.sqlTx.Rollback()
 	if err != nil {

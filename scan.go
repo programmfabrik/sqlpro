@@ -38,12 +38,8 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 
 	if target.Kind() == reflect.Ptr {
 		if target.IsNil() {
-			// nil pointer
-			// if target.Type().Elem().Kind() == reflect.Struct {
 			target.Set(reflect.New(target.Type().Elem()))
-			// }
 		}
-		// log.Printf("Kind: %v", target.Elem().Kind())
 		if target.Elem().Kind() == reflect.Struct {
 			targetV = target.Elem()
 		} else {
@@ -83,17 +79,11 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 		isStruct = false
 	}
 
-	// if target.Kind() == reflect.Ptr {
-	// 	log.Printf("Target: %v %s %v %s", target.IsValid(), target.Type(), target.IsNil(), target.Type().Elem().Kind())
-	// }
-
-	nullValueByIdx := make(map[int]reflect.Value, 0)
+	nullValueByIdx := make(map[int]reflect.Value)
 
 	for idx, col := range cols {
 
 		skip := false
-
-		// logrus.Infof("%v %v %v %v", idx, col, isStruct, isSlice)
 
 		if isStruct {
 			finfo, ok := info[col]
@@ -102,7 +92,6 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 			} else {
 				fieldV = targetV.FieldByName(finfo.name)
 				if finfo.isJson {
-					// log.Printf("Setting field to json: %v idx: %d", finfo.name, idx)
 					data[idx] = &NullJson{}
 					nullValueByIdx[idx] = fieldV
 					continue
@@ -314,7 +303,7 @@ func Scan(target interface{}, rows *sql.Rows) error {
 	)
 
 	if target == nil {
-		panic(fmt.Errorf("Scan: target must not be <nil>."))
+		panic(fmt.Errorf("scan: target must not be <nil>"))
 	}
 
 	v := reflect.ValueOf(target)

@@ -14,29 +14,22 @@ import (
 	"github.com/pkg/errors"
 )
 
-var ErrQueryReturnedZeroRows error = errors.New("Query returned 0 rows.")
+var ErrQueryReturnedZeroRows = errors.New("Found zero rows")
 
 // structInfo is a map to fieldInfo by db_name
 type structInfo map[string]*fieldInfo
 
-func (si structInfo) hasDbName(db_name string) bool {
-	_, ok := si[db_name]
-	return ok
-}
-
 func (si structInfo) primaryKey(db_name string) bool {
 	fieldInfo, ok := si[db_name]
 	if !ok {
-		panic(fmt.Sprintf("isPrimaryKey: db_name %s not found.", db_name))
+		// FIXME(hady): Is there a real possibility that si[db_name] is incorrect?
+		return false
 	}
 	return fieldInfo.primaryKey
 }
 
 func (si structInfo) onlyPrimaryKey() *fieldInfo {
-	var (
-		fi *fieldInfo
-	)
-
+	var fi *fieldInfo
 	for _, info := range si {
 		if info.primaryKey {
 			if fi != nil {
@@ -74,7 +67,7 @@ func (ni *NullTime) Scan(value interface{}) error {
 		}
 		ni.Valid = true
 	default:
-		return fmt.Errorf("Unable to scan time: %T %s", value, value)
+		return fmt.Errorf("unable to scan time: %T %s", value, value)
 	}
 	// pretty.Println(ni)
 	return nil
@@ -140,19 +133,19 @@ func (nj *NullRawMessage) Scan(value interface{}) error {
 type fieldInfo struct {
 	structField reflect.StructField
 	name        string
-	dbName      string
+	columnName  string
 	omitEmpty   bool
 	primaryKey  bool
 	null        bool
-	readOnly    bool
 	notNull     bool
+	readOnly    bool
 	isJson      bool
 	emptyValue  string
 	ptr         bool // set true if the field is a pointer
 }
 
-// allowNull returns true if the given can store "null" values
-func (fi *fieldInfo) allowNull() bool {
+// allowsNull returns true if the given can store "null" values
+func (fi *fieldInfo) allowsNull() bool {
 	if fi.ptr {
 		if fi.notNull {
 			return false
@@ -165,7 +158,8 @@ func (fi *fieldInfo) allowNull() bool {
 	return false
 }
 
-// getStructInfo returns a per dbName to fieldInfo map
+// getStructInfo returns a dbName to fieldInfo map
+// TODO(hady): Docs: Does not support embedded pointer types
 func getStructInfo(t reflect.Type) structInfo {
 	si := structInfo{}
 
@@ -173,9 +167,11 @@ func getStructInfo(t reflect.Type) structInfo {
 		field := t.Field(i)
 		if field.Anonymous {
 			if field.Type.Kind() == reflect.Ptr {
-				panic(fmt.Sprintf("Unable to scan into embedded pointer type %q", field.Type))
+				panic(fmt.Sprintf("Sqlpro doesn't support embedded pointer types like: %q", field.Type))
 			}
 
+			//FIXME(hady): Limit the number of nesting model levels, we shouldn't really be running
+			// data models with 10 nesting layers
 			for dbName, info := range getStructInfo(field.Type) {
 				si[dbName] = info
 			}
@@ -185,6 +181,10 @@ func getStructInfo(t reflect.Type) structInfo {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		if field.Anonymous {
+			//(hady): This may look stupid, but it isn't. Please DO NOT remove it, the first loop
+			// checks for embedded fields, however by the time we get to the rest non-"embedded" fields
+			// we haven't really factored the embedded ones out. That is to say, they're still PART OF the
+			// struct fields. So we ignore them the second-time around.
 			continue
 		}
 
@@ -194,19 +194,18 @@ func getStructInfo(t reflect.Type) structInfo {
 			continue
 		}
 
-		path := strings.Split(dbTag, ",")
-		if path[0] == "-" {
+		if field.PkgPath != "" {
+			panic(fmt.Errorf("sqlpro doesn't support unexported fields, please export the field %s or remove the db tag", field.Name))
+		}
+
+		directives := strings.Split(dbTag, ",")
+		if directives[0] == "-" {
 			// ignore field
 			continue
 		}
 
-		if field.PkgPath != "" {
-			// unexported field
-			panic(fmt.Errorf("getStructInfo: Unable to use unexported field for sqlpro: %s", field.Name))
-		}
-
-		info := fieldInfo{
-			dbName:      path[0],
+		fi := fieldInfo{
+			columnName:  directives[0],
 			structField: field,
 			name:        field.Name,
 			omitEmpty:   false,
@@ -214,57 +213,49 @@ func getStructInfo(t reflect.Type) structInfo {
 			primaryKey:  false,
 		}
 
-		if info.dbName == "-" {
-			continue
+		if len(fi.columnName) == 0 {
+			fi.columnName = field.Name
 		}
 
 		switch field.Type.Kind() {
 		case reflect.Ptr:
-			info.ptr = true
-			info.emptyValue = "null"
+			fi.ptr = true
+			fi.emptyValue = "null"
 		case reflect.String:
-			info.emptyValue = "''"
+			fi.emptyValue = "''"
 		case reflect.Int:
-			info.emptyValue = "0"
+			fi.emptyValue = "0"
 		default:
-			info.emptyValue = "''"
+			fi.emptyValue = "''"
 		}
 
-		if info.dbName == "" {
-			info.dbName = field.Name
-		}
-
-		for idx, p := range path {
-			if idx == 0 {
-				continue
-			}
+		for _, p := range directives[1:] {
 			switch p {
 			case "pk":
-				info.primaryKey = true
+				fi.primaryKey = true
 			case "omitempty":
-				info.omitEmpty = true
+				fi.omitEmpty = true
 			case "null":
-				info.null = true
+				fi.null = true
 			case "notnull":
-				info.notNull = true
+				fi.notNull = true
 			case "json":
-				info.isJson = true
+				fi.isJson = true
 			case "readonly":
-				info.readOnly = true
+				fi.readOnly = true
 			default:
-				// ignore unrecognized
+				panic(fmt.Errorf("sqlpro doesn't support the given field tag %s", p))
 			}
 		}
 
-		if info.allowNull() && info.emptyValue == "null" {
-			info.emptyValue = "''"
+		//FIXME(hady): test the logic behind this Why are we overriding the
+		// designated value of a field that can clearly accept a null
+		if fi.allowsNull() && fi.emptyValue == "null" {
+			fi.emptyValue = "''"
 		}
 
-		si[info.dbName] = &info
+		si[fi.columnName] = &fi
 	}
-
-	// logrus.Infof("%s %#v", t.Name(), si)
-
 	return si
 }
 
@@ -278,8 +269,6 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		runes              []rune
 		currRune, nextRune rune
 	)
-
-	// pretty.Println(args)
 
 	sb = strings.Builder{}
 	nthArg = 0
@@ -308,10 +297,8 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 			continue
 		}
 
-		// log.Printf("%d curr: %s next: %s", i, string(currRune), string(nextRune))
-
 		if nthArg >= len(args) {
-			return "", nil, fmt.Errorf("replaceArgs: Expecting #%d arg. Got: %d args.", (nthArg + 1), len(args))
+			return "", nil, fmt.Errorf("sqlpro error: Expecting %d args but Got %d args", (nthArg + 1), len(args))
 		}
 
 		arg := args[nthArg]
@@ -324,7 +311,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 			case string:
 				sb.WriteString(db.Esc(v))
 			default:
-				return "", nil, fmt.Errorf("replaceArgs: Unable to replace %s with type %T, need *string or string.", string(currRune), arg)
+				return "", nil, fmt.Errorf("sqlpro error: Unable to replace %s with type %T, need *string or string", string(currRune), arg)
 			}
 			continue
 		}
@@ -342,12 +329,11 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		}
 
 		rv := reflect.ValueOf(arg)
-		// log.Printf("Placeholder! %#v %v", arg, rv.IsValid())
 
 		if rv.IsValid() && rv.Type().Kind() == reflect.Slice {
 			l := rv.Len()
 			if l == 0 {
-				return "", nil, fmt.Errorf(`sqlpro: replaceArgs: Unable to merge empty slice: "%s"`, sqlS)
+				return "", nil, fmt.Errorf(`sqlpro error: Unable to merge empty slice: "%s"`, sqlS)
 			}
 			sb.WriteRune('(')
 			fi := &fieldInfo{ptr: rv.Type().Elem().Kind() == reflect.Ptr}
@@ -376,7 +362,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 							sb.WriteString(strconv.FormatInt(*v, 10))
 						}
 					default:
-						return "", nil, errors.Errorf("Unable to add type: %T in slice placeholder. Can only add string, *string, int64, and *int64", item)
+						return "", nil, errors.Errorf("sqlpro error: Unable to add type %T in slice placeholder. Can only add string, *string, int64, and *int64", item)
 					}
 				} else {
 					newArgs = append(newArgs, db.nullValue(item, fi))
@@ -384,7 +370,6 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 				}
 			}
 			sb.WriteRune(')')
-			// pretty.Println(parts)
 			continue
 		}
 
@@ -398,9 +383,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		newArgs = append(newArgs, args[i])
 	}
 
-	// log.Printf("%s %v -> \"%s\"", sqlS, args, sb.String())
 	return sb.String(), newArgs, nil
-
 }
 
 // appendPlaceholder adds one placeholder to the built
@@ -437,13 +420,13 @@ func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
 	case *float64:
 		return strconv.FormatFloat(*v, 'f', -1, 64)
 	case bool:
-		if v == false {
+		if !v {
 			return "FALSE"
 		} else {
 			return "TRUE"
 		}
 	case *bool:
-		if *v == false {
+		if !*v {
 			return "FALSE"
 		} else {
 			return "TRUE"
@@ -472,7 +455,7 @@ func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
 		case reflect.String:
 			s = sv.String()
 		default:
-			panic(fmt.Sprintf("EscValueForInsert failed: %T, underlying type: %s", value, sv.Kind()))
+			panic(fmt.Errorf("sqlpro error: Failed to escape value %T for insert, the underlying type is %s", value, sv.Kind()))
 		}
 	}
 	return db.EscValue(s)
@@ -482,55 +465,16 @@ func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
 func (db *DB) nullValue(value interface{}, fi *fieldInfo) interface{} {
 
 	if isZero(value) {
-		if fi.allowNull() {
+		if fi.allowsNull() {
 			return nil
 		}
 		// a pointer which does not allow to store null
 		if fi.ptr {
-			panic(fmt.Errorf(`Unable to store <nil> pointer in "notnull" field: %s`, fi.name))
+			panic(fmt.Errorf(`unable to store <nil> pointer in "notnull" field: %s`, fi.name))
 		}
 	}
 
 	return value
-}
-
-// argsToString builds a debug string from given args
-func argsToString(args ...interface{}) string {
-	var (
-		s        string
-		sb       strings.Builder
-		rv       reflect.Value
-		argPrint interface{}
-	)
-	if len(args) == 0 {
-		return " <none>"
-	}
-	sb = strings.Builder{}
-	for idx, arg := range args {
-		if arg == nil {
-			sb.WriteString(fmt.Sprintf(" #%d <nil>\n", idx))
-			continue
-		}
-
-		switch arg.(type) {
-		case bool, *bool:
-			s = "%v"
-		case int64, int32, uint64, uint32, int,
-			*int64, *int32, *uint64, *uint32, *int:
-			s = "%d"
-		case float64, float32,
-			*float64, *float32:
-			s = "%b"
-		case string, *string:
-			s = "%s"
-		default:
-			s = "%v"
-		}
-		rv = reflect.ValueOf(arg)
-		argPrint = reflect.Indirect(rv).Interface()
-		sb.WriteString(fmt.Sprintf(" #%d %s "+s+"\n", idx, rv.Type(), argPrint))
-	}
-	return sb.String()
 }
 
 func (db *DB) Close() error {
@@ -538,8 +482,6 @@ func (db *DB) Close() error {
 		panic("sqlpro.DB.Close: Unable to close, use Open to initialize the wrapper.")
 	}
 	db.isClosed = true
-
-	// log.Printf("%s sqlpro.Close: %s", db, db.DSN)
 	return db.sqlDB.Close()
 }
 
@@ -550,26 +492,22 @@ func (db *DB) IsClosed() bool {
 	return db.isClosed
 }
 
+const (
+	supportedPostgresDriver = "postgres"
+	supportedSQLiteDriver   = "sqlite3"
+)
+
 // Open opens a database connection and returns an sqlpro wrap handle
-func Open(driverS, dsn string) (*DB, error) {
-
-	var driver dbDriver
-
-	switch driverS {
-	default:
-		return nil, fmt.Errorf(`Unknown driver "%s"`, driverS)
-	case "sqlite3":
-		driver = SQLITE3
-	case "postgres":
-		driver = POSTGRES
+func Open(driver, dsn string) (*DB, error) {
+	if driver != supportedPostgresDriver &&
+		driver != supportedSQLiteDriver {
+		return nil, errors.New("sqlpro error: only sqlite3 and postgres drivers are supported")
 	}
 
-	conn, err := sql.Open(string(driver), dsn)
+	conn, err := sql.Open(driver, dsn)
 	if err != nil {
 		return nil, err
 	}
-
-	// conn.SetMaxOpenConns(1)
 
 	err = conn.Ping()
 	if err != nil {
@@ -577,30 +515,14 @@ func Open(driverS, dsn string) (*DB, error) {
 		return nil, err
 	}
 
-	wrapper := New(conn)
-
-	wrapper.sqlDB = conn
-	wrapper.Driver = driver
-
-	// wrapper.Debug = true
-
-	wrapper.DSN = dsn
-
-	switch driver {
-	case POSTGRES:
-		wrapper.PlaceholderMode = DOLLAR
-		wrapper.UseReturningForLastId = true
-		wrapper.SupportsLastInsertId = false
-	case SQLITE3:
-	default:
-		return nil, errors.Errorf("sqlpro.Open: Unsupported driver '%s'.", driver)
+	db := newDB(conn)
+	if driver == supportedPostgresDriver {
+		db.PlaceholderMode = DOLLAR
+		db.UseReturningForLastId = true
+		db.SupportsLastInsertId = false
 	}
-
-	return wrapper, nil
+	db.sqlDB = conn
+	db.Driver = driver
+	db.DSN = dsn
+	return db, nil
 }
-
-// Open -> handle
-// handle.New -> NewConnection
-// handle.Wrap -> Wrap yourself
-// handle.Tx -> NewTransaction
-// handle.Prepare -> NewPrearedStatement

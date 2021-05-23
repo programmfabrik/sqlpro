@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"reflect"
 	"strings"
 
@@ -22,7 +21,6 @@ import (
 // *struct
 //
 // For structs the function returns true, nil, for slices false, nil
-
 func checkData(data interface{}) (reflect.Value, bool, error) {
 	var (
 		rv         reflect.Value
@@ -30,7 +28,7 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 	)
 
 	err := func() (reflect.Value, bool, error) {
-		return rv, false, fmt.Errorf("Insert/Update needs a struct or slice of structs.")
+		return rv, false, fmt.Errorf("insert/Update needs a struct or slice of structs")
 	}
 
 	rv = reflect.Indirect(reflect.ValueOf(data))
@@ -73,7 +71,6 @@ func (db *DB) Insert(table string, data interface{}) error {
 // sqlpro will executes one INSERT statement per row.
 // result.LastInsertId will be used to set the first primary
 // key column.
-
 func (db *DB) InsertContext(ctx context.Context, table string, data interface{}) error {
 	var (
 		rv         reflect.Value
@@ -104,13 +101,11 @@ func (db *DB) InsertContext(ctx context.Context, table string, data interface{})
 			return err
 		}
 		pk := structInfo.onlyPrimaryKey()
-		// log.Printf("PK: %d", insert_id)
 		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 && rv.CanAddr() {
 			setPrimaryKey(rv.FieldByName(pk.name), insert_id)
 		}
 	}
 
-	// data
 	return nil
 }
 
@@ -121,7 +116,7 @@ func setPrimaryKey(rv reflect.Value, id int64) {
 	case reflect.Uint64:
 		rv.SetUint(uint64(id))
 	default:
-		err := fmt.Errorf("Unknown type to set primary key: %s", rv.Type())
+		err := fmt.Errorf("unknown type to set primary key: %s", rv.Type())
 		panic(err)
 	}
 }
@@ -153,10 +148,10 @@ func (db *DB) InsertBulkContext(ctx context.Context, table string, data interfac
 	}
 
 	if structMode {
-		return fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
+		return fmt.Errorf("insertBulk: Need Slice to insert bulk")
 	}
 
-	key_map := make(map[string]*fieldInfo, 0)
+	key_map := make(map[string]*fieldInfo)
 	rows := make([]map[string]interface{}, 0)
 
 	if rv.Len() == 0 {
@@ -214,7 +209,7 @@ func (db *DB) InsertBulkContext(ctx context.Context, table string, data interfac
 
 	_, err = db.execContext(ctx, int64(len(rows)), insert.String())
 	if err != nil {
-		return db.sqlError(err, insert.String(), []interface{}{})
+		return err
 	}
 
 	return nil
@@ -233,10 +228,10 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 	}
 
 	if structMode {
-		return fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
+		return fmt.Errorf("insertBulk: Need Slice to insert bulk")
 	}
 
-	key_map := make(map[string]*fieldInfo, 0)
+	key_map := make(map[string]*fieldInfo)
 	rows := make([]map[string]interface{}, 0)
 
 	if rv.Len() == 0 {
@@ -260,7 +255,7 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 
 	txn, err := db.sqlDB.Begin()
 	if err != nil {
-		return db.sqlError(err, "BEGIN TRANSACTION", []interface{}{})
+		return err
 	}
 
 	keys := make([]string, 0, len(key_map))
@@ -270,7 +265,7 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 
 	stmt, err := txn.Prepare(pq.CopyIn(table, keys...))
 	if err != nil {
-		return db.sqlError(err, "Prepare", []interface{}{})
+		return err
 	}
 
 	for _, row := range rows {
@@ -280,18 +275,18 @@ func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 		}
 		_, err = stmt.Exec(values...)
 		if err != nil {
-			return db.sqlError(err, "Exec", values)
+			return err
 		}
 	}
 
 	_, err = stmt.Exec()
 	if err != nil {
-		return db.sqlError(err, "Exec DONE", []interface{}{})
+		return err
 	}
 
 	err = txn.Commit()
 	if err != nil {
-		return db.sqlError(err, "Commit DONE", []interface{}{})
+		return err
 	}
 
 	return nil
@@ -317,16 +312,12 @@ func (db *DB) insertStruct(ctx context.Context, table string, row interface{}) (
 				return 0, nil, fmt.Errorf("[%s] Trying to write into read-only transaction: %s", db, sql)
 			}
 
-			sql = sql + " RETURNING " + db.Esc(pk.dbName)
+			sql = sql + " RETURNING " + db.Esc(pk.columnName)
 			var insert_id int64 = 0
-			if db.Debug || db.DebugExec {
-				log.Printf("%s SQL: %s\nARGS:\n%s", db, sql, argsToString(args...))
-			}
 			err := db.Query(&insert_id, sql, args...)
 			if err != nil {
 				return 0, nil, err
 			}
-			// log.Printf("Returning ID: %d", insert_id)
 			return insert_id, info, nil
 		}
 	}
@@ -385,7 +376,7 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 			// skip primary keys for update
 			pk_value = db.nullValue(value, structInfo[key])
 			if pk_value == nil {
-				return "", args, fmt.Errorf("Unable to build UPDATE clause with <nil> key: %s", key)
+				return "", args, fmt.Errorf("unable to build UPDATE clause with <nil> key: %s", key)
 			}
 			where.WriteString(db.Esc(key))
 			where.WriteString("=")
@@ -404,7 +395,7 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 	}
 
 	if !valid {
-		return "", args, fmt.Errorf("Unable to build UPDATE clause, at least one key needed.")
+		return "", args, fmt.Errorf("nable to build UPDATE clause, at least one key needed")
 	}
 
 	args = append(args, pk_value)
@@ -499,10 +490,10 @@ func (db *DB) saveRow(table string, data interface{}) error {
 	pk := info.onlyPrimaryKey()
 
 	if pk == nil {
-		return fmt.Errorf("Save needs a struct with exactly one 'pk' field.")
+		return fmt.Errorf("save needs a struct with exactly one 'pk' field")
 	}
 
-	pk_value, ok := values[pk.dbName]
+	pk_value, ok := values[pk.columnName]
 	if !ok || isZero(pk_value) {
 		return db.Insert(table, data)
 	} else {
@@ -521,7 +512,7 @@ func (db *DB) valuesFromStruct(data interface{}) (map[string]interface{}, struct
 		err    error
 	)
 
-	values = make(map[string]interface{}, 0)
+	values = make(map[string]interface{})
 	dataV = reflect.ValueOf(data)
 
 	info = getStructInfo(dataV.Type())
@@ -555,7 +546,7 @@ func (db *DB) valuesFromStruct(data interface{}) (map[string]interface{}, struct
 			}
 		}
 
-		values[fieldInfo.dbName] = actualData
+		values[fieldInfo.columnName] = actualData
 		// log.Printf("Name: %s Value: %v %v", fieldInfo.name, dataF.Interface(), isZero)
 	}
 	return values, info, nil
@@ -578,13 +569,9 @@ func (db *DB) execContext(ctx context.Context, expRows int64, execSql string, ar
 		newArgs  []interface{}
 	)
 
-	if db.Debug || db.DebugExec {
-		log.Printf("%s SQL: %s\nARGS:\n%s", db, execSql, argsToString(args...))
-	}
-
 	// Fail if transaction present and not in write mode
 	if db.sqlTx != nil && !db.txWriteMode {
-		return 0, fmt.Errorf("[%s] Trying to write into read-only transaction: %s", db, execSql)
+		return 0, fmt.Errorf("sqlpro error: cannot execute %s in a read-only transaction", execSql)
 	}
 
 	if len(args) > 0 {
@@ -597,52 +584,29 @@ func (db *DB) execContext(ctx context.Context, expRows int64, execSql string, ar
 		newArgs = args
 	}
 
-	// logrus.Infof("[%p] EXEC #%d %s %s", db.sqlDB, db.transID, aurora.Green(fmt.Sprintf("%p", db.db)), execSql0[0:10])
-
 	var result sql.Result
-
-	// tries := 0
-	for {
-		result, err = db.db.ExecContext(ctx, execSql0, newArgs...)
-		if err != nil {
-			// pp.Println(err)
-			// sqlErr, ok := err.(sqlite3.Error)
-			// if ok {
-			// 	if sqlErr.Code == 5 { // SQLITE_BUSY
-			// 		tries++
-			// 		time.Sleep(50 * time.Millisecond)
-			// 		if tries < 3 {
-			// 			continue
-			// 		}
-			// 	}
-			// }
-			return 0, db.debugError(db.sqlError(err, execSql0, newArgs))
-		}
-		break
-	}
-
-	row_count, err := result.RowsAffected()
+	result, err = db.db.ExecContext(ctx, execSql0, newArgs...)
 	if err != nil {
-		// Ignore the error here, we might get
-		// no RowsAffected available after the empty statement from pq driver
-		// which is ok and not a real error (it happens with empty statements)
+		return 0, err
 	}
+
+	rows, _ := result.RowsAffected()
 
 	if expRows == -1 {
-		return row_count, nil
+		return rows, nil
 	}
 
-	if row_count != expRows {
-		return 0, db.debugError(fmt.Errorf("Exec affected only %d out of %d.", row_count, expRows))
+	if rows != expRows {
+		return 0, fmt.Errorf("sqlpro error: expected %d affected rows, got %d affected rows", expRows, rows)
 	}
 
 	if !db.SupportsLastInsertId {
 		return 0, nil
 	}
 
-	last_insert_id, err := result.LastInsertId()
+	lastInsertedID, err := result.LastInsertId()
 	if err != nil {
-		return 0, db.debugError(err)
+		return 0, err
 	}
-	return last_insert_id, nil
+	return lastInsertedID, nil
 }

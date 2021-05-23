@@ -4,22 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
-	"os"
 	"reflect"
 	"strings"
-	"time"
 
-	"github.com/olekukonko/tablewriter"
 	"github.com/pkg/errors"
-	"github.com/yudai/pp"
 )
-
-type dbDriver string
-
-// The driver strings must match the driver from the stdlib
-const POSTGRES = "postgres"
-const SQLITE3 = "sqlite3"
 
 type DB struct {
 	db                    dbWrappable
@@ -35,7 +24,7 @@ type DB struct {
 	MaxPlaceholder        int
 	UseReturningForLastId bool
 	SupportsLastInsertId  bool
-	Driver                dbDriver
+	Driver                string
 	DSN                   string
 	isClosed              bool
 
@@ -62,23 +51,11 @@ func (db *DB) String() string {
 	return fmt.Sprintf("[%s, %p]", db.Driver, db)
 }
 
-type DebugLevel int
-
-const (
-	PANIC      DebugLevel = 1
-	ERROR                 = 2
-	UPDATE                = 4
-	INSERT                = 8
-	EXEC                  = 16
-	QUERY                 = 32
-	QUERY_DUMP            = 64
-)
-
 type PlaceholderMode int
 
 const (
-	DOLLAR   PlaceholderMode = 1
-	QUESTION                 = 2
+	DOLLAR PlaceholderMode = iota + 1
+	QUESTION
 )
 
 type dbWrappable interface {
@@ -90,11 +67,8 @@ type dbWrappable interface {
 
 // NewSqlPro returns a wrapped database handle providing
 // access to the sql pro functions.
-func New(dbWrap dbWrappable) *DB {
-	var (
-		db *DB
-	)
-	db = new(DB)
+func newDB(dbWrap dbWrappable) *DB {
+	db := new(DB)
 	db.db = dbWrap
 
 	// DEFAULTs for sqlite
@@ -145,11 +119,9 @@ func (db *DB) QueryContext(ctx context.Context, target interface{}, query string
 		return err
 	}
 
-	// log.Printf("RowMode: %s %v", targetValue.Type().Kind(), rowMode)
-
 	rows, err = db.db.Query(query0, newArgs...)
 	if err != nil {
-		return db.debugError(db.sqlError(err, query0, newArgs))
+		return err
 	}
 
 	switch target.(type) {
@@ -162,15 +134,7 @@ func (db *DB) QueryContext(ctx context.Context, target interface{}, query string
 
 	err = Scan(target, rows)
 	if err != nil {
-		return db.debugError(err)
-	}
-
-	if (db.Debug || db.DebugQuery) && !strings.HasPrefix(query, "INSERT INTO") {
-		// log.Printf("Query: %s Args: %v", query, args)
-		err = db.PrintQueryContext(ctx, query, args...)
-		if err != nil {
-			panic(err)
-		}
+		return err
 	}
 
 	return nil
@@ -182,65 +146,8 @@ func (db *DB) Exec(execSql string, args ...interface{}) error {
 
 func (db *DB) ExecContext(ctx context.Context, execSql string, args ...interface{}) error {
 	if execSql == "" {
-		return db.debugError(errors.New("Exec: Empty query"))
+		return errors.New("sqlpro error: Query is empty")
 	}
 	_, err := db.execContext(ctx, -1, execSql, args...)
 	return err
-}
-
-func (db *DB) PrintQueryContext(ctx context.Context, query string, args ...interface{}) error {
-	var (
-		rows    *sql.Rows
-		err     error
-		query0  string
-		newArgs []interface{}
-	)
-
-	data := make([][]string, 0)
-
-	query0, newArgs, err = db.replaceArgs(query, args...)
-
-	start := time.Now()
-	rows, err = db.db.QueryContext(ctx, query0, newArgs...)
-	if err != nil {
-		pp.Println(query0)
-		pp.Println(newArgs)
-		return db.sqlError(err, query0, newArgs)
-	}
-	cols, _ := rows.Columns()
-	defer rows.Close()
-
-	err = Scan(&data, rows)
-	if err != nil {
-		log.Println(err)
-		return err
-	}
-
-	fmt.Fprint(os.Stdout, db.sqlDebug(query0, newArgs))
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader(cols)
-	table.AppendBulk(data)
-	table.SetCaption(true, "Took: "+time.Since(start).String())
-	table.Render()
-
-	return nil
-}
-
-func (db *DB) debugError(err error) error {
-	if err != ErrQueryReturnedZeroRows {
-		log.Printf("sqlpro error: %s", err)
-		db.LastError = err
-	}
-	return err
-}
-
-func (db *DB) sqlError(err error, sqlS string, args []interface{}) error {
-	return errors.Wrapf(err, "Database Error: %s", db.sqlDebug(sqlS, args))
-}
-
-func (db *DB) sqlDebug(sqlS string, args []interface{}) string {
-	// if len(sqlS) > 1000 {
-	// 	return fmt.Sprintf("SQL:\n %s \nARGS:\n%v\n", sqlS[0:1000], argsToString(args...))
-	// }
-	return fmt.Sprintf("%s SQL:\n %s \nARGS:\n%v\n", db, sqlS, argsToString(args...))
 }
