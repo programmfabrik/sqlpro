@@ -220,6 +220,85 @@ func (db *DB) InsertBulkContext(ctx context.Context, table string, data interfac
 	return nil
 }
 
+func (db *DB) UpdateBulk(table string, data interface{}) error {
+	return db.UpdateBulkContext(context.Background(), table, data)
+}
+
+// UpdateBulkContext updates all records of the passed slice. It using a single
+// exec to send the data to the database. This is generally faster than calling Update
+// with a slice (which sends individual update requests).
+func (db *DB) UpdateBulkContext(ctx context.Context, table string, data interface{}) error {
+	var (
+		rv         reflect.Value
+		structMode bool
+		err        error
+	)
+
+	rv, structMode, err = checkData(data)
+	if err != nil {
+		return err
+	}
+
+	if structMode {
+		return fmt.Errorf("UpdateBulk: Need Slice to update bulk.")
+	}
+
+	l := rv.Len()
+	if l == 0 {
+		return nil
+	}
+
+	update := strings.Builder{} // make([]string, 0)
+	for i := 0; i < l; i++ {
+		row := reflect.Indirect(rv.Index(i)).Interface()
+		values, structInfo, err := db.valuesFromStruct(row)
+		if err != nil {
+			return errors.Wrap(err, "sqlpro.UpdateBulk error.")
+		}
+		where := strings.Builder{}
+		whereCount := 0
+		update.WriteString("UPDATE ")
+		update.WriteString(db.Esc(table))
+		update.WriteString(" SET ")
+		idx2 := 0
+		for key, value := range values {
+			value2 := db.nullValue(value, structInfo[key])
+			if structInfo[key].primaryKey {
+				// skip primary keys for update
+				if value2 == nil {
+					return fmt.Errorf("Unable to build UPDATE clause with <nil> primary key: %s", key)
+				}
+				if whereCount > 0 {
+					where.WriteString(" AND ")
+				}
+				where.WriteString(db.Esc(key))
+				where.WriteRune('=')
+				where.WriteString(db.EscValueForInsert(value2, structInfo[key]))
+				whereCount++
+			} else {
+				if idx2 > 0 {
+					update.WriteRune(',')
+				}
+				idx2++
+				update.WriteString(db.Esc(key))
+				update.WriteRune('=')
+				update.WriteString(db.EscValueForInsert(value2, structInfo[key]))
+			}
+		}
+		update.WriteString(" WHERE ")
+		update.Write([]byte(where.String()))
+		update.WriteRune(';')
+		update.WriteRune('\n')
+	}
+
+	_, err = db.execContext(ctx, 1, update.String())
+	if err != nil {
+		return db.sqlError(err, update.String(), []interface{}{})
+	}
+
+	return nil
+}
+
 func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
 	var (
 		rv         reflect.Value
