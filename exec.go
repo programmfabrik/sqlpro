@@ -439,9 +439,10 @@ func (db *DB) insertClauseFromValues(table string, values map[string]interface{}
 func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []interface{}, error) {
 
 	var (
-		valid    bool
-		args     []interface{}
-		pk_value interface{}
+		valid     bool
+		args      []interface{}
+		whereArgs []interface{}
+		pk_value  interface{}
 	)
 
 	values, structInfo, err := db.valuesFromStruct(row)
@@ -458,7 +459,6 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 
 	where.WriteString(" WHERE ")
 
-	idx := 0
 	for key, value := range values {
 		if structInfo.primaryKey(key) {
 			// skip primary keys for update
@@ -466,19 +466,23 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 			if pk_value == nil {
 				return "", args, fmt.Errorf("Unable to build UPDATE clause with <nil> key: %s", key)
 			}
+			if len(whereArgs) > 0 {
+				where.WriteString(" AND ")
+			}
 			where.WriteString(db.Esc(key))
 			where.WriteString("=")
 			where.WriteRune(db.PlaceholderValue)
+
+			whereArgs = append(whereArgs, pk_value)
 			valid = true
 		} else {
-			if idx > 0 {
+			if len(args) > 0 {
 				update.WriteString(",")
 			}
 			update.WriteString(db.Esc(key))
 			update.WriteString("=")
 			update.WriteRune(db.PlaceholderValue)
 			args = append(args, db.nullValue(value, structInfo[key]))
-			idx++
 		}
 	}
 
@@ -486,7 +490,7 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 		return "", args, fmt.Errorf("Unable to build UPDATE clause, at least one key needed.")
 	}
 
-	args = append(args, pk_value)
+	args = append(args, whereArgs...)
 
 	// Add where clause
 	return update.String() + where.String(), args, nil
