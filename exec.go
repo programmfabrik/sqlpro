@@ -586,6 +586,7 @@ func (db *DB) saveRow(table string, data interface{}) error {
 	}
 
 	pk_value, ok := values[pk.dbName]
+
 	if !ok || isZero(pk_value) {
 		return db.Insert(table, data)
 	} else {
