@@ -8,6 +8,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/olekukonko/tablewriter"
@@ -41,12 +42,12 @@ type DB struct {
 
 	txWriteMode bool
 
-	// txStart     time.Time
-	// transID   int
 	LastError error // This is set to the last error
 
 	txAfterCommit   []func()
 	txAfterRollback []func()
+
+	txBeginMtx *sync.Mutex // used to protect write tx begin for SQLITE3
 }
 
 // DB returns the wrapped sql.DB handle
@@ -95,6 +96,8 @@ func New(dbWrap dbWrappable) *DB {
 		db *DB
 	)
 	db = new(DB)
+
+	db.txBeginMtx = &sync.Mutex{}
 	db.db = dbWrap
 
 	// DEFAULTs for sqlite
