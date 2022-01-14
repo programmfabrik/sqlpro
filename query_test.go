@@ -108,6 +108,9 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
+	var v string
+	db.Log().Query(&v, "SELECT sqlite_version()")
+
 	err = db.Exec(`
 	CREATE TABLE test(
 		a INTEGER PRIMARY KEY AUTOINCREMENT,
