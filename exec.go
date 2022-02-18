@@ -23,24 +23,18 @@ import (
 //
 // For structs the function returns true, nil, for slices false, nil
 
-func checkData(data interface{}) (reflect.Value, bool, error) {
-	var (
-		rv         reflect.Value
-		structMode bool
-	)
-
-	err := func() (reflect.Value, bool, error) {
+func checkData(data interface{}) (rv reflect.Value, structMode bool, err error) {
+	erro := func() (reflect.Value, bool, error) {
 		return rv, false, fmt.Errorf("Insert/Update needs a struct or slice of structs.")
 	}
 
 	rv = reflect.Indirect(reflect.ValueOf(data))
-
 	switch rv.Type().Kind() {
 	case reflect.Slice:
 		switch rv.Type().Elem().Kind() {
 		case reflect.Ptr:
 			if rv.Type().Elem().Elem().Kind() != reflect.Struct {
-				return err()
+				return erro()
 			}
 		case reflect.Interface, reflect.Struct:
 		default:
@@ -49,7 +43,7 @@ func checkData(data interface{}) (reflect.Value, bool, error) {
 	case reflect.Struct:
 		structMode = true
 	default:
-		return err()
+		return erro()
 	}
 
 	return rv, structMode, nil
@@ -592,7 +586,6 @@ func (db *DB) saveRow(table string, data interface{}) error {
 	} else {
 		return db.Update(table, data)
 	}
-
 }
 
 // valuesFromStruct returns the relevant values

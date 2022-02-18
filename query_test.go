@@ -18,6 +18,42 @@ func init() {
 	sqlite3.SQLiteTimestampFormats[0] = time.RFC3339Nano
 }
 
+func TestMain(m *testing.M) {
+
+	var err error
+
+	cleanup()
+
+	db, err = Open("sqlite3", "./test.db?_foreign_keys=1&_journal=wal&_busy_timeout=1000")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var v string
+	db.Log().Query(&v, "SELECT sqlite_version()")
+
+	err = db.Exec(`
+	CREATE TABLE test(
+		a INTEGER PRIMARY KEY AUTOINCREMENT,
+		b TEXT,
+		c TEXT,
+		d REAL,
+		e DATETIME,
+		f TEXT,
+		"""" TEXT
+	);
+	`)
+
+	if err != nil {
+		cleanup()
+		log.Fatal(err)
+	}
+
+	exitCode := m.Run()
+	cleanup()
+	os.Exit(exitCode)
+}
+
 var db *DB
 
 type jsonStore struct {
@@ -95,42 +131,6 @@ type testRowUint8Ptr struct {
 
 func cleanup() {
 	os.Remove("./test.db")
-}
-
-func TestMain(m *testing.M) {
-
-	var err error
-
-	cleanup()
-
-	db, err = Open("sqlite3", "./test.db?_foreign_keys=1&_journal=wal&_busy_timeout=1000")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	var v string
-	db.Log().Query(&v, "SELECT sqlite_version()")
-
-	err = db.Exec(`
-	CREATE TABLE test(
-		a INTEGER PRIMARY KEY AUTOINCREMENT,
-		b TEXT,
-		c TEXT,
-		d REAL,
-		e DATETIME,
-		f TEXT,
-		"""" TEXT
-	);
-	`)
-
-	if err != nil {
-		cleanup()
-		log.Fatal(err)
-	}
-
-	exitCode := m.Run()
-	cleanup()
-	os.Exit(exitCode)
 }
 
 func TestInsertSliceStructPtr(t *testing.T) {
@@ -986,5 +986,44 @@ func runPlaceholderTests(t *testing.T, db *DB, phTests []phTest) {
 		if len(newArgs) != te.expArgCount {
 			t.Errorf("Expected arg count wrong: %s, exp: %d", sqlS, te.expArgCount)
 		}
+	}
+}
+
+type testEmbedA struct {
+	A int64 `db:"a1,pk,omitempty"`
+}
+
+type testEmbedB struct {
+	testEmbedA
+	B string `db:"b"`
+}
+
+type testEmbedC struct {
+	testEmbedB
+	C string `db:"c"`
+}
+
+type testEmbed struct {
+	testEmbedC
+	D string `db:"d"`
+}
+
+func TestEmbed(t *testing.T) {
+	tr := testEmbed{
+		testEmbedC: testEmbedC{
+			testEmbedB: testEmbedB{
+				testEmbedA: testEmbedA{A: 0},
+				B:          "B",
+			},
+			C: "C",
+		},
+		D: "D",
+	}
+	err := db.Save("test", &tr)
+	if !assert.NoError(t, err) {
+		return
+	}
+	if !assert.Greater(t, tr.A, int64(0)) {
+		return
 	}
 }
