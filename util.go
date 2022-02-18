@@ -169,6 +169,7 @@ func (fi *fieldInfo) allowNull() bool {
 func getStructInfo(t reflect.Type) structInfo {
 	si := structInfo{}
 
+	// Resolve anonymous fields
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		if field.Anonymous {
@@ -185,6 +186,7 @@ func getStructInfo(t reflect.Type) structInfo {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		if field.Anonymous {
+			// These are resolved above
 			continue
 		}
 
@@ -264,7 +266,6 @@ func getStructInfo(t reflect.Type) structInfo {
 	}
 
 	// logrus.Infof("%s %#v", t.Name(), si)
-
 	return si
 }
 
@@ -367,8 +368,24 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 						} else {
 							sb.WriteString(db.EscValue(*v))
 						}
+					case int:
+						sb.WriteString(strconv.FormatInt(int64(v), 10))
+					case int32:
+						sb.WriteString(strconv.FormatInt(int64(v), 10))
 					case int64:
 						sb.WriteString(strconv.FormatInt(v, 10))
+					case *int:
+						if v == nil {
+							sb.WriteString("null")
+						} else {
+							sb.WriteString(strconv.FormatInt(int64(*v), 10))
+						}
+					case *int32:
+						if v == nil {
+							sb.WriteString("null")
+						} else {
+							sb.WriteString(strconv.FormatInt(int64(*v), 10))
+						}
 					case *int64:
 						if v == nil {
 							sb.WriteString("null")
@@ -376,7 +393,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 							sb.WriteString(strconv.FormatInt(*v, 10))
 						}
 					default:
-						return "", nil, errors.Errorf("Unable to add type: %T in slice placeholder. Can only add string, *string, int64, and *int64", item)
+						return "", nil, errors.Errorf("Unable to add type: %T in slice placeholder. Can only add string, *string, int, int32, int64, *int, *int32  and *int64", item)
 					}
 				} else {
 					newArgs = append(newArgs, db.nullValue(item, fi))
