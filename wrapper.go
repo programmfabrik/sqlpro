@@ -230,9 +230,12 @@ func (db *DB) PrintQueryContext(ctx context.Context, query string, args ...inter
 }
 
 func (db *DB) debugError(err error) error {
-	if err != ErrQueryReturnedZeroRows {
+	if err == ErrQueryReturnedZeroRows {
+		return err
+	}
+	db.LastError = err
+	if db.Debug {
 		log.Printf("sqlpro error: %s", err)
-		db.LastError = err
 	}
 	return err
 }
