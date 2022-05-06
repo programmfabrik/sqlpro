@@ -143,18 +143,18 @@ func TestInsertSliceStructPtr(t *testing.T) {
 	now = time.Now()
 
 	data := []*testRow{
-		&testRow{
+		{
 			B: "fooUPDATEME",
 			F: jsonStore{"Yo", "Mama"},
 		},
-		&testRow{
+		{
 			B: "bar",
 			C: "other",
 			D: 1.2345,
 			E: &now,
 			F: jsonStore{"Henk", "Torsten"},
 		},
-		&testRow{
+		{
 			B: "torsten",
 			C: "other",
 			D: 1.2345,
@@ -189,10 +189,10 @@ func TestInsertSliceStructPtr(t *testing.T) {
 
 func TestInsertSliceStruct(t *testing.T) {
 	data := []testRow{
-		testRow{
+		{
 			B: "foo4",
 		},
-		testRow{
+		{
 			B: "bar5",
 			C: "other",
 			D: 1.2345,
@@ -305,11 +305,11 @@ func TestUpdate(t *testing.T) {
 
 func TestUpdateMany(t *testing.T) {
 	trs := []*testRow{
-		&testRow{
+		{
 			A: 1,
 			B: "foo",
 		},
-		&testRow{
+		{
 			A: 3,
 			B: "torsten2",
 		},
@@ -323,10 +323,10 @@ func TestUpdateMany(t *testing.T) {
 
 func TestSaveMany(t *testing.T) {
 	trs := []*testRow{
-		&testRow{
+		{
 			B: "henk",
 		},
-		&testRow{
+		{
 			A: 3,
 			B: "torsten3",
 		},
@@ -704,8 +704,8 @@ func TestQueryIntStruct(t *testing.T) {
 	}
 
 	// Make sure the error is not wrapped
-	if err != ErrQueryReturnedZeroRows {
-		t.Errorf("Expected ErrQueryReturnedZeroRows, got: %w", err)
+	if !assert.Equal(t, ErrQueryReturnedZeroRows, err) {
+		return
 	}
 }
 
@@ -923,21 +923,21 @@ func TestReplaceArgs(t *testing.T) {
 
 	runPlaceholderTests(t, db2, []phTest{
 		// sql, args, expected, err?
-		phTest{"SELECT * FROM @ WHERE id IN ?", ifcArr{"test", []int64{-1, -2, -3}}, `SELECT * FROM "test" WHERE id IN (?,?,?)`, false, 3},
-		phTest{"ID IN ?", ifcArr{int_args}, "ID IN (?,?,?,?)", false, 4},
-		phTest{"ID IN '??'", ifcArr{}, "ID IN '?'", false, 0},
-		phTest{"ID = ?", ifcArr{"hen'k"}, "ID = ?", false, 1},
-		phTest{"ID = ?", ifcArr{5}, "ID = ?", false, 1},
-		phTest{"ID IN '''", ifcArr{}, "ID IN '''", false, 0},
-		phTest{"ID IN '?'''", ifcArr{}, "ID IN '?'''", true, 0},
-		phTest{"ID IN '??''' WHERE ?", ifcArr{int_args}, "ID IN '?''' WHERE (?,?,?,?)", false, 4},
-		phTest{"ID IN ?", ifcArr{string_args}, "ID IN (?,?,?)", false, 3},
+		{"SELECT * FROM @ WHERE id IN ?", ifcArr{"test", []int64{-1, -2, -3}}, `SELECT * FROM "test" WHERE id IN (?,?,?)`, false, 3},
+		{"ID IN ?", ifcArr{int_args}, "ID IN (?,?,?,?)", false, 4},
+		{"ID IN '??'", ifcArr{}, "ID IN '?'", false, 0},
+		{"ID = ?", ifcArr{"hen'k"}, "ID = ?", false, 1},
+		{"ID = ?", ifcArr{5}, "ID = ?", false, 1},
+		{"ID IN '''", ifcArr{}, "ID IN '''", false, 0},
+		{"ID IN '?'''", ifcArr{}, "ID IN '?'''", true, 0},
+		{"ID IN '??''' WHERE ?", ifcArr{int_args}, "ID IN '?''' WHERE (?,?,?,?)", false, 4},
+		{"ID IN ?", ifcArr{string_args}, "ID IN (?,?,?)", false, 3},
 	})
 
 	db2.PlaceholderMode = DOLLAR
 
 	runPlaceholderTests(t, db2, []phTest{
-		phTest{"ID IN ?", ifcArr{int_args}, "ID IN ($1,$2,$3,$4)", false, 4},
+		{"ID IN ?", ifcArr{int_args}, "ID IN ($1,$2,$3,$4)", false, 4},
 	})
 
 }

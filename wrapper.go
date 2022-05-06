@@ -150,7 +150,7 @@ func (db *DB) QueryContext(ctx context.Context, target interface{}, query string
 
 	// log.Printf("RowMode: %s %v", targetValue.Type().Kind(), rowMode)
 
-	rows, err = db.db.Query(query0, newArgs...)
+	rows, err = db.db.QueryContext(ctx, query0, newArgs...)
 	if err != nil {
 		return db.debugError(db.sqlError(err, query0, newArgs))
 	}
