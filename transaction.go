@@ -2,13 +2,14 @@ package sqlpro
 
 import (
 	"context"
+	"database/sql"
 	"log"
 )
 
 // txBegin starts a new transaction, this panics if
 // the wrapper was not initialized using "Open"
 // it gets passed a flag which states if there will be any writes
-func (db *DB) txBeginContext(ctx context.Context, wMode bool) (*DB, error) {
+func (db *DB) txBeginContext(ctx context.Context, topts *sql.TxOptions) (*DB, error) {
 	var (
 		err error
 	)
@@ -22,15 +23,17 @@ func (db *DB) txBeginContext(ctx context.Context, wMode bool) (*DB, error) {
 
 	db2 := *db
 
-	// In case of write mode tx for SQLITE driver
-	// There's the need to start it as immediate so it gets a lock
-	// Not implemented in driver, therefore this raw SQL workaround
-	// Lock, so we can safely do the sqlite3 ROLLBACK / BEGIN below
+	wMode := topts == nil || !topts.ReadOnly
+
+	// In case of write mode tx for SQLITE driver There's the need to start it
+	// as immediate so it gets a lock Not implemented in driver, therefore this
+	// raw SQL workaround Lock, so we can safely do the sqlite3 ROLLBACK / BEGIN
+	// below
 	if wMode && db.Driver == SQLITE3 {
 		db2.txBeginMtx.Lock()
 	}
 
-	db2.sqlTx, err = db.sqlDB.BeginTx(ctx, nil)
+	db2.sqlTx, err = db.sqlDB.BeginTx(ctx, topts)
 	if err != nil {
 		if wMode && db.Driver == SQLITE3 {
 			db2.txBeginMtx.Unlock()
@@ -65,22 +68,17 @@ func (db *DB) txBeginContext(ctx context.Context, wMode bool) (*DB, error) {
 
 // Begin starts a new transaction, (read-write mode)
 func (db *DB) Begin() (*DB, error) {
-	return db.txBeginContext(context.Background(), true)
+	return db.txBeginContext(context.Background(), nil)
 }
 
 // BeginRead starts a new transaction, read-only mode
 func (db *DB) BeginRead() (*DB, error) {
-	return db.txBeginContext(context.Background(), false)
+	return db.txBeginContext(context.Background(), &sql.TxOptions{ReadOnly: true})
 }
 
 // Begin starts a new transaction, (read-write mode)
-func (db *DB) BeginContext(ctx context.Context) (*DB, error) {
-	return db.txBeginContext(ctx, true)
-}
-
-// BeginRead starts a new transaction, read-only mode
-func (db *DB) BeginReadContext(ctx context.Context) (*DB, error) {
-	return db.txBeginContext(ctx, false)
+func (db *DB) BeginContext(ctx context.Context, opts *sql.TxOptions) (*DB, error) {
+	return db.txBeginContext(ctx, opts)
 }
 
 func (db *DB) Commit() error {
