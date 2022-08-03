@@ -13,6 +13,7 @@ import (
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/pkg/errors"
+	"github.com/programmfabrik/golib"
 	"github.com/yudai/pp"
 )
 
@@ -248,5 +249,5 @@ func (db *DB) sqlDebug(sqlS string, args []interface{}) string {
 	// if len(sqlS) > 1000 {
 	// 	return fmt.Sprintf("SQL:\n %s \nARGS:\n%v\n", sqlS[0:1000], argsToString(args...))
 	// }
-	return fmt.Sprintf("%s SQL:\n %s \nARGS:\n%v\n", db, sqlS, argsToString(args...))
+	return fmt.Sprintf("%s SQL:\n %s \nARGS:\n%v\n", db, golib.CutStr(sqlS, 2000, "..."), argsToString(args...))
 }

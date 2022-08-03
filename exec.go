@@ -11,6 +11,7 @@ import (
 
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
+	"github.com/programmfabrik/golib"
 )
 
 // checkData checks that the given data is either one of:
@@ -393,7 +394,7 @@ func (db *DB) insertStruct(ctx context.Context, table string, row interface{}) (
 			sql = sql + " RETURNING " + db.Esc(pk.dbName)
 			var insert_id int64 = 0
 			if db.Debug || db.DebugExec {
-				log.Printf("%s SQL: %s\nARGS:\n%s", db, sql, argsToString(args...))
+				log.Printf("%s SQL: %s\nARGS:\n%s", db, golib.CutStr(sql, 2000, "..."), argsToString(args...))
 			}
 			err := db.Query(&insert_id, sql, args...)
 			if err != nil {
@@ -656,7 +657,7 @@ func (db *DB) execContext(ctx context.Context, expRows int64, execSql string, ar
 	)
 
 	if db.Debug || db.DebugExec {
-		log.Printf("%s SQL: %s\nARGS:\n%s", db, execSql, argsToString(args...))
+		log.Printf("%s SQL: %s\nARGS:\n%s", db, golib.CutStr(execSql, 2000, "..."), argsToString(args...))
 	}
 
 	// Fail if transaction present and not in write mode
