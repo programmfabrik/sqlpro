@@ -135,7 +135,6 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 
 // Query runs a query and fills the received rows or row into the target.
 // It is a wrapper method around the
-//
 func (db *DB) QueryContext(ctx context.Context, target interface{}, query string, args ...interface{}) error {
 	var (
 		rows    *sql.Rows
@@ -189,6 +188,16 @@ func (db *DB) ExecContext(ctx context.Context, execSql string, args ...interface
 		return db.debugError(errors.New("Exec: Empty query"))
 	}
 	_, err := db.execContext(ctx, -1, execSql, args...)
+	return err
+}
+
+// ExecContextExp executes execSql in context ctx. If the number of rows affected
+// doesn't match expRows, an error is returned.
+func (db *DB) ExecContextExp(ctx context.Context, expRows int, execSql string, args ...interface{}) error {
+	if execSql == "" {
+		return db.debugError(errors.New("Exec: Empty query"))
+	}
+	_, err := db.execContext(ctx, int64(expRows), execSql, args...)
 	return err
 }
 

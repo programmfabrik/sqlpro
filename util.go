@@ -15,6 +15,7 @@ import (
 )
 
 var ErrQueryReturnedZeroRows error = errors.New("Query returned 0 rows.")
+var ErrMismatchedRowsAffected error = errors.New("Mismatched rows affected.")
 
 // structInfo is a map to fieldInfo by db_name
 type structInfo map[string]*fieldInfo

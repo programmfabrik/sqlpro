@@ -647,8 +647,9 @@ func isZero(x interface{}) bool {
 	return reflect.DeepEqual(x, reflect.Zero(reflect.TypeOf(x)).Interface())
 }
 
-// exec wraps DB.Exec and automatically checks the number of Affected rows
-// if expRows == -1, the check is skipped
+// execContext wraps DB.Exec and automatically checks the number of Affected
+// rows if expRows == -1, the check is skipped. It returns the ID inserted if
+// the driver supports it.
 func (db *DB) execContext(ctx context.Context, expRows int64, execSql string, args ...interface{}) (int64, error) {
 	var (
 		execSql0 string
@@ -711,7 +712,7 @@ func (db *DB) execContext(ctx context.Context, expRows int64, execSql string, ar
 	}
 
 	if row_count != expRows {
-		return 0, db.debugError(fmt.Errorf("Exec affected only %d out of %d.", row_count, expRows))
+		return 0, db.debugError(ErrMismatchedRowsAffected)
 	}
 
 	if !db.SupportsLastInsertId {
