@@ -149,7 +149,6 @@ func (db *DB) QueryContext(ctx context.Context, target interface{}, query string
 	}
 
 	// log.Printf("RowMode: %s %v", targetValue.Type().Kind(), rowMode)
-
 	rows, err = db.db.QueryContext(ctx, query0, newArgs...)
 	if err != nil {
 		return db.debugError(db.sqlError(err, query0, newArgs))
@@ -187,18 +186,17 @@ func (db *DB) ExecContext(ctx context.Context, execSql string, args ...interface
 	if execSql == "" {
 		return db.debugError(errors.New("Exec: Empty query"))
 	}
-	_, err := db.execContext(ctx, -1, execSql, args...)
+	_, _, err := db.execContext(ctx, execSql, args...)
 	return err
 }
 
 // ExecContextExp executes execSql in context ctx. If the number of rows affected
 // doesn't match expRows, an error is returned.
-func (db *DB) ExecContextExp(ctx context.Context, expRows int, execSql string, args ...interface{}) error {
+func (db *DB) ExecContextRowsAffected(ctx context.Context, execSql string, args ...interface{}) (int64, int64, error) {
 	if execSql == "" {
-		return db.debugError(errors.New("Exec: Empty query"))
+		return 0, 0, db.debugError(errors.New("Exec: Empty query"))
 	}
-	_, err := db.execContext(ctx, int64(expRows), execSql, args...)
-	return err
+	return db.execContext(ctx, execSql, args...)
 }
 
 func (db *DB) PrintQueryContext(ctx context.Context, query string, args ...interface{}) error {

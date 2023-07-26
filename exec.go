@@ -207,7 +207,10 @@ func (db *DB) InsertBulkContext(ctx context.Context, table string, data interfac
 		insert.WriteRune('\n')
 	}
 
-	_, err = db.execContext(ctx, int64(len(rows)), insert.String())
+	rowsAffected, _, err := db.execContext(ctx, insert.String())
+	if err == nil && rowsAffected != int64(len(rows)) {
+		err = ErrMismatchedRowsAffected
+	}
 	if err != nil {
 		return db.sqlError(err, insert.String(), []interface{}{})
 	}
@@ -286,7 +289,10 @@ func (db *DB) UpdateBulkContext(ctx context.Context, table string, data interfac
 		update.WriteRune('\n')
 	}
 
-	_, err = db.execContext(ctx, 1, update.String())
+	rowsAffected, _, err := db.execContext(ctx, update.String())
+	if err == nil && rowsAffected != 1 {
+		err = ErrMismatchedRowsAffected
+	}
 	if err != nil {
 		return db.sqlError(err, update.String(), []interface{}{})
 	}
@@ -406,7 +412,10 @@ func (db *DB) insertStruct(ctx context.Context, table string, row interface{}) (
 	}
 
 	// log.Printf("SQL: %s Debug: %v", sql, db.Debug)
-	insert_id, err := db.execContext(ctx, 1, sql, args...)
+	rowsAffected, insert_id, err := db.execContext(ctx, sql, args...)
+	if err == nil && rowsAffected != 1 {
+		err = ErrMismatchedRowsAffected
+	}
 	if err != nil {
 		return 0, nil, err
 	}
@@ -522,7 +531,10 @@ func (db *DB) UpdateContext(ctx context.Context, table string, data interface{})
 		if err != nil {
 			return err
 		}
-		_, err = db.execContext(ctx, 1, update, args...)
+		rowsAffected, _, err := db.execContext(ctx, update, args...)
+		if err == nil && rowsAffected != 1 {
+			err = ErrMismatchedRowsAffected
+		}
 		if err != nil {
 			return err
 		}
@@ -533,7 +545,10 @@ func (db *DB) UpdateContext(ctx context.Context, table string, data interface{})
 			if err != nil {
 				return err
 			}
-			_, err = db.execContext(ctx, 1, update, args...)
+			rowsAffected, _, err := db.execContext(ctx, update, args...)
+			if err == nil && rowsAffected != 1 {
+				err = ErrMismatchedRowsAffected
+			}
 			if err != nil {
 				return err
 			}
@@ -647,13 +662,11 @@ func isZero(x interface{}) bool {
 	return reflect.DeepEqual(x, reflect.Zero(reflect.TypeOf(x)).Interface())
 }
 
-// execContext wraps DB.Exec and automatically checks the number of Affected
-// rows if expRows == -1, the check is skipped. It returns the ID inserted if
-// the driver supports it.
-func (db *DB) execContext(ctx context.Context, expRows int64, execSql string, args ...interface{}) (int64, error) {
+// execContext wraps DB.Exec and returns the number of affected rows as reported
+// by the driver as well as the ID inserted, if the driver supports it.
+func (db *DB) execContext(ctx context.Context, execSql string, args ...interface{}) (rowsAffected, insertID int64, err error) {
 	var (
 		execSql0 string
-		err      error
 		newArgs  []interface{}
 	)
 
@@ -663,13 +676,13 @@ func (db *DB) execContext(ctx context.Context, expRows int64, execSql string, ar
 
 	// Fail if transaction present and not in write mode
 	if db.sqlTx != nil && !db.txWriteMode {
-		return 0, fmt.Errorf("[%s] Trying to write into read-only transaction: %s", db, execSql)
+		return 0, 0, fmt.Errorf("[%s] Trying to write into read-only transaction: %s", db, execSql)
 	}
 
 	if len(args) > 0 {
 		execSql0, newArgs, err = db.replaceArgs(execSql, args...)
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 	} else {
 		execSql0 = execSql
@@ -695,7 +708,7 @@ func (db *DB) execContext(ctx context.Context, expRows int64, execSql string, ar
 			// 		}
 			// 	}
 			// }
-			return 0, db.debugError(db.sqlError(err, execSql0, newArgs))
+			return 0, 0, db.debugError(db.sqlError(err, execSql0, newArgs))
 		}
 		break
 	}
@@ -707,21 +720,13 @@ func (db *DB) execContext(ctx context.Context, expRows int64, execSql string, ar
 		// which is ok and not a real error (it happens with empty statements)
 	}
 
-	if expRows == -1 {
-		return row_count, nil
-	}
-
-	if row_count != expRows {
-		return 0, db.debugError(ErrMismatchedRowsAffected)
-	}
-
 	if !db.SupportsLastInsertId {
-		return 0, nil
+		return row_count, 0, nil
 	}
 
 	last_insert_id, err := result.LastInsertId()
 	if err != nil {
-		return 0, db.debugError(err)
+		return row_count, 0, db.debugError(err)
 	}
-	return last_insert_id, nil
+	return row_count, last_insert_id, nil
 }
