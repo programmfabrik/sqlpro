@@ -122,6 +122,27 @@ func (db *DB) EscValue(s string) string {
 	return `'` + strings.ReplaceAll(s, `'`, `''`) + `'`
 }
 
+// Version returns the version of the connected database
+func (db *DB) Version() (version string, err error) {
+	var selVersion, prefix string
+	switch db.Driver {
+	case POSTGRES:
+		selVersion = "SELECT version()"
+	case SQLITE3:
+		selVersion = "SELECT sqlite_version()"
+		prefix = "Sqlite "
+	}
+	if selVersion != "" {
+		err = db.Query(&version, selVersion)
+		if err != nil {
+			return "", fmt.Errorf("reading database version failed: %w", err)
+		}
+	} else {
+		version = "<unsupported driver>"
+	}
+	return prefix + version, nil
+}
+
 // Log returns a copy with debug enabled
 func (db *DB) Log() *DB {
 	newDB := *db
