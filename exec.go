@@ -558,9 +558,9 @@ func (db *DB) UpdateContext(ctx context.Context, table string, data interface{})
 	return nil
 }
 
-// Save saves the given data. It performs an INSERT if the only
-// primary key is zero, and and UPDATE if it is not. It panics
-// if it the record has no primary key or less than one
+// Save saves the given data. It performs an INSERT if the only primary key is
+// zero, and and UPDATE if it is not. It panics if it the record has no primary
+// key or less than one
 func (db *DB) Save(table string, data interface{}) error {
 
 	rv, structMode, err := checkData(data)

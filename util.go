@@ -513,18 +513,30 @@ func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
 	case *time.Time:
 		s = v.Format(time.RFC3339Nano)
 	default:
-		if vr, ok := v.(driver.Valuer); ok {
+		vr, ok := value.(driver.Valuer)
+		if ok {
 			v2, _ := vr.Value()
 			return db.EscValueForInsert(v2, fi)
 		}
 		sv := reflect.ValueOf(value)
+		// try to use a pointer to check if the driver.Valuer is satisfied
+		if sv.Kind() != reflect.Pointer {
+			pv := reflect.New(sv.Type())
+			pv.Elem().Set(sv)
+			var anyVal interface{} = pv.Interface()
+			vr2, ok2 := anyVal.(driver.Valuer)
+			if ok2 {
+				v3, _ := vr2.Value()
+				return db.EscValueForInsert(v3, fi)
+			}
+		}
 		switch sv.Kind() {
 		case reflect.Int:
 			return strconv.FormatInt(sv.Int(), 10)
 		case reflect.String:
 			s = sv.String()
 		default:
-			panic(fmt.Sprintf("EscValueForInsert failed: %T, underlying type: %s", value, sv.Kind()))
+			panic(fmt.Sprintf("EscValueForInsert failed: %T value %v in type: %s", value, value, sv.Kind()))
 		}
 	}
 	return db.EscValue(s)
