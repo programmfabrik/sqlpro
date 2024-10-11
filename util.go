@@ -599,7 +599,10 @@ func argsToString(args ...interface{}) string {
 
 func (db *DB) Close() error {
 	if db.sqlDB == nil {
-		panic("sqlpro.DB.Close: Unable to close, use Open to initialize the wrapper.")
+		panic("sqlpro.DB.Close: Unable to close, use Open to initialize the wrapper")
+	}
+	if db.sqlTx != nil {
+		panic("sqlpro.TX.Close: Unable to close a tx handle")
 	}
 	db.isClosed = true
 
