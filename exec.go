@@ -635,16 +635,16 @@ func (db *DB) valuesFromStruct(data interface{}) (map[string]interface{}, struct
 
 		if fieldInfo.isJson {
 			if isZero {
-				if fieldInfo.ptr {
-					actualData = reflect.Zero(fieldInfo.structField.Type).Interface()
-				} else {
-					actualData = ""
-				}
-			} else {
-				actualData, err = json.Marshal(actualData)
+				actualData = reflect.Zero(fieldInfo.structField.Type).Interface()
 			}
+			actualData, err = json.Marshal(actualData)
 			if err != nil {
 				return nil, nil, errors.Wrap(err, "Unable to marshal as data as json.")
+			}
+			// If the database accepts "null" we write NULL, if the db does not accept null
+			// we write "null", if it is not specified we write NULL if the json renders to "null"
+			if isZero && (fieldInfo.null || !fieldInfo.notNull && string(actualData.([]byte)) == "null") {
+				actualData = nil
 			}
 		}
 
