@@ -305,7 +305,6 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 // The mapping into structs is done by analyzing the struct's tag names
 // and using the given "db" key for the mapping. The mapping works on
 // exported fields only. Use "-" as mapping name to ignore the field.
-//
 func Scan(target interface{}, rows *sql.Rows) error {
 	var (
 		targetValue reflect.Value

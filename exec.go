@@ -129,13 +129,23 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 // the record in the DB with one Exec.
 // The given data needs to be:
 //
-// *[]*strcut
+// *[]*struct
 // *[]struct
 // []*struct
 // []struct
 //
 // sqlpro will executes one INSERT statement per call.
 func (db *DB) InsertBulkContext(ctx context.Context, table string, data interface{}) error {
+	return db.insertBulkContext(ctx, table, data, false)
+}
+
+// InsertBulkOnConflictDoNothingContext works like InsertBulkContext but adds a
+// "ON CONFLICT DO NOTHING" to the insert command.
+func (db *DB) InsertBulkOnConflictDoNothingContext(ctx context.Context, table string, data interface{}) error {
+	return db.insertBulkContext(ctx, table, data, true)
+}
+
+func (db *DB) insertBulkContext(ctx context.Context, table string, data interface{}, onConflictDoNothing bool) error {
 	var (
 		rv         reflect.Value
 		structMode bool
@@ -207,8 +217,12 @@ func (db *DB) InsertBulkContext(ctx context.Context, table string, data interfac
 		insert.WriteRune('\n')
 	}
 
+	if onConflictDoNothing {
+		insert.WriteString(" ON CONFLICT DO NOTHING")
+	}
+
 	rowsAffected, _, err := db.execContext(ctx, insert.String())
-	if err == nil && rowsAffected != int64(len(rows)) {
+	if !onConflictDoNothing && err == nil && rowsAffected != int64(len(rows)) {
 		err = ErrMismatchedRowsAffected
 	}
 	if err != nil {

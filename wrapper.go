@@ -213,7 +213,7 @@ func (db *DB) ExecContext(ctx context.Context, execSql string, args ...interface
 
 // ExecContextExp executes execSql in context ctx. If the number of rows affected
 // doesn't match expRows, an error is returned.
-func (db *DB) ExecContextRowsAffected(ctx context.Context, execSql string, args ...interface{}) (int64, int64, error) {
+func (db *DB) ExecContextRowsAffected(ctx context.Context, execSql string, args ...interface{}) (rowsAffected int64, insertID int64, err error) {
 	if execSql == "" {
 		return 0, 0, db.debugError(errors.New("Exec: Empty query"))
 	}
