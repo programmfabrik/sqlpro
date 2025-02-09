@@ -136,16 +136,16 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 //
 // sqlpro will executes one INSERT statement per call.
 func (db *DB) InsertBulkContext(ctx context.Context, table string, data interface{}) error {
-	return db.insertBulkContext(ctx, table, data, false)
+	return db.insertBulkContext(ctx, table, data, false, nil)
 }
 
 // InsertBulkOnConflictDoNothingContext works like InsertBulkContext but adds a
 // "ON CONFLICT DO NOTHING" to the insert command.
-func (db *DB) InsertBulkOnConflictDoNothingContext(ctx context.Context, table string, data interface{}) error {
-	return db.insertBulkContext(ctx, table, data, true)
+func (db *DB) InsertBulkOnConflictDoNothingContext(ctx context.Context, table string, data interface{}, cols ...string) error {
+	return db.insertBulkContext(ctx, table, data, true, cols)
 }
 
-func (db *DB) insertBulkContext(ctx context.Context, table string, data interface{}, onConflictDoNothing bool) error {
+func (db *DB) insertBulkContext(ctx context.Context, table string, data interface{}, onConflictDoNothing bool, conflictCols []string) error {
 	var (
 		rv         reflect.Value
 		structMode bool
@@ -218,7 +218,15 @@ func (db *DB) insertBulkContext(ctx context.Context, table string, data interfac
 	}
 
 	if onConflictDoNothing {
-		insert.WriteString(" ON CONFLICT DO NOTHING")
+		if len(conflictCols) > 0 {
+			cCols := []string{}
+			for _, cc := range conflictCols {
+				cCols = append(cCols, db.Esc(cc))
+			}
+			insert.WriteString(" ON CONFLICT (" + strings.Join(cCols, ",") + ") DO NOTHING")
+		} else {
+			insert.WriteString(" ON CONFLICT DO NOTHING")
+		}
 	}
 
 	rowsAffected, _, err := db.execContext(ctx, insert.String())

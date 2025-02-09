@@ -114,10 +114,12 @@ func New(dbWrap dbWrappable) *DB {
 	return db
 }
 
+// Esc escapes s to use as sql name
 func (db *DB) Esc(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
+// EscValue escapes s to use as sql value
 func (db *DB) EscValue(s string) string {
 	return `'` + strings.ReplaceAll(s, `'`, `''`) + `'`
 }
