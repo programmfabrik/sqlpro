@@ -432,7 +432,7 @@ func (db *DB) insertStruct(ctx context.Context, table string, row interface{}) (
 
 	if db.UseReturningForLastId {
 		pk := info.onlyPrimaryKey()
-		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
+		if pk != nil {
 
 			// Fail if transaction present and not in write mode
 			if db.sqlTx != nil && !db.txWriteMode {
