@@ -100,8 +100,20 @@ func (db *DB) InsertContext(ctx context.Context, table string, data interface{})
 		}
 		pk := structInfo.onlyPrimaryKey()
 		// log.Printf("PK: %d", insert_id)
-		if pk != nil && pk.structField.Type.Kind() == reflect.Int64 && rv.CanAddr() {
-			setPrimaryKey(rv.FieldByName(pk.name), insert_id)
+		if pk != nil && rv.CanAddr() {
+			switch pk.structField.Type.Kind() {
+			case reflect.Int,
+				reflect.Int8,
+				reflect.Int16,
+				reflect.Int32,
+				reflect.Int64,
+				reflect.Uint,
+				reflect.Uint8,
+				reflect.Uint16,
+				reflect.Uint32,
+				reflect.Uint64:
+				setPrimaryKey(rv.FieldByName(pk.name), insert_id)
+			}
 		}
 	}
 
@@ -111,9 +123,17 @@ func (db *DB) InsertContext(ctx context.Context, table string, data interface{})
 
 func setPrimaryKey(rv reflect.Value, id int64) {
 	switch rv.Type().Kind() {
-	case reflect.Int64:
+	case reflect.Int,
+		reflect.Int8,
+		reflect.Int16,
+		reflect.Int32,
+		reflect.Int64:
 		rv.SetInt(id)
-	case reflect.Uint64:
+	case reflect.Uint,
+		reflect.Uint8,
+		reflect.Uint16,
+		reflect.Uint32,
+		reflect.Uint64:
 		rv.SetUint(uint64(id))
 	default:
 		err := fmt.Errorf("Unknown type to set primary key: %s", rv.Type())
