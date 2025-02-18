@@ -433,22 +433,22 @@ func (db *DB) insertStruct(ctx context.Context, table string, row interface{}) (
 	if db.UseReturningForLastId {
 		pk := info.onlyPrimaryKey()
 		if pk != nil {
-
 			// Fail if transaction present and not in write mode
 			if db.sqlTx != nil && !db.txWriteMode {
 				return 0, nil, fmt.Errorf("[%s] Trying to write into read-only transaction: %s", db, sql)
 			}
 
 			sql = sql + " RETURNING " + db.Esc(pk.dbName)
-			var insert_id int64 = 0
+			var insert_id_any interface{}
 			if db.Debug || db.DebugExec {
 				log.Printf("%s SQL: %s\nARGS:\n%s", db, golib.CutStr(sql, 2000, "..."), argsToString(args...))
 			}
-			err := db.Query(&insert_id, sql, args...)
+			err := db.QueryContext(ctx, &insert_id_any, sql, args...)
 			if err != nil {
 				return 0, nil, err
 			}
-			// log.Printf("Returning ID: %d", insert_id)
+			insert_id, _ := insert_id_any.(int64) // ignore conversion error, return 0 in that case
+			// log.Printf("Returning ID: %T %v", insert_id_any, insert_id_any)
 			return insert_id, info, nil
 		}
 	}
