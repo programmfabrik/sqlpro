@@ -925,12 +925,19 @@ func TestReplaceArgs(t *testing.T) {
 		// sql, args, expected, err?
 		{"SELECT * FROM @ WHERE id IN ?", ifcArr{"test", []int64{-1, -2, -3}}, `SELECT * FROM "test" WHERE id IN (?,?,?)`, false, 3},
 		{"ID IN ?", ifcArr{int_args}, "ID IN (?,?,?,?)", false, 4},
-		{"ID IN '??'", ifcArr{}, "ID IN '?'", false, 0},
+		{"ID IN '??'", ifcArr{}, "ID IN '??'", false, 0},
 		{"ID = ?", ifcArr{"hen'k"}, "ID = ?", false, 1},
 		{"ID = ?", ifcArr{5}, "ID = ?", false, 1},
 		{"ID IN '''", ifcArr{}, "ID IN '''", false, 0},
-		{"ID IN '?'''", ifcArr{}, "ID IN '?'''", true, 0},
-		{"ID IN '??''' WHERE ?", ifcArr{int_args}, "ID IN '?''' WHERE (?,?,?,?)", false, 4},
+		{"ID IN '?'''", ifcArr{}, "ID IN '?'''", false, 0},
+		{
+			`FROM """value_lat?est" v1 WHERE (((v1."int"::text IN ? OR (v1."text" ILIKE '%berg?see.jpg%' ESCAPE '\')) args)`,
+			ifcArr{[]string{`berg?see`}},
+			`FROM """value_lat?est" v1 WHERE (((v1."int"::text IN (?) OR (v1."text" ILIKE '%berg?see.jpg%' ESCAPE '\')) args)`,
+			false,
+			1,
+		},
+		{"ID IN '?''' WHERE ?", ifcArr{int_args}, "ID IN '?''' WHERE (?,?,?,?)", false, 4},
 		{"ID IN ?", ifcArr{string_args}, "ID IN (?,?,?)", false, 3},
 	})
 
@@ -949,7 +956,8 @@ func runPlaceholderTests(t *testing.T, db *DB, phTests []phTest) {
 		newArgs []interface{}
 	)
 
-	for _, te := range phTests {
+	for idx2, te := range phTests {
+		println(fmt.Sprintf("--- #%d ---", idx2))
 
 		args := make([]interface{}, 0)
 		switch v := te.args.(type) {
@@ -972,19 +980,24 @@ func runPlaceholderTests(t *testing.T, db *DB, phTests []phTest) {
 		sqlS, newArgs, err = db.replaceArgs(te.sql, args...)
 		if err != nil {
 			if te.expErr {
+				println(err.Error())
 				continue
 			}
 			t.Error(err)
+			return
 		} else {
 			if te.expErr {
 				t.Errorf("Error expected for: %s", te.sql)
+				return
 			}
-		}
-		if sqlS != te.expSql {
-			t.Errorf("Replace %s not matching %s", sqlS, te.expSql)
-		}
-		if len(newArgs) != te.expArgCount {
-			t.Errorf("Expected arg count wrong: %s, exp: %d", sqlS, te.expArgCount)
+			if sqlS != te.expSql {
+				t.Errorf("Replace\n[%s] not matching\n[%s]", sqlS, te.expSql)
+				return
+			}
+			if len(newArgs) != te.expArgCount {
+				t.Errorf("Expected arg count wrong: %s, exp: %d", sqlS, te.expArgCount)
+				return
+			}
 		}
 	}
 }

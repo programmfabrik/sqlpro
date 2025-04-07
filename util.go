@@ -14,8 +14,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-var ErrQueryReturnedZeroRows error = errors.New("Query returned 0 rows.")
-var ErrMismatchedRowsAffected error = errors.New("Mismatched rows affected.")
+var ErrQueryReturnedZeroRows error = errors.New("Query returned 0 rows")
+var ErrMismatchedRowsAffected error = errors.New("Mismatched rows affected")
 
 // structInfo is a map to fieldInfo by db_name
 type structInfo map[string]*fieldInfo
@@ -274,11 +274,11 @@ func getStructInfo(t reflect.Type) structInfo {
 // it returns the new placeholder string and the reduced list of arguments.
 func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface{}, error) {
 	var (
-		nthArg, lenRunes   int
-		newArgs            []interface{}
-		sb                 strings.Builder
-		runes              []rune
-		currRune, nextRune rune
+		nthArg, lenRunes int
+		newArgs          []interface{}
+		sb               strings.Builder
+		runes            []rune
+		currRune         rune
 	)
 
 	// pretty.Println(args)
@@ -291,26 +291,34 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 
 	for i := 0; i < lenRunes; i++ {
 		currRune = runes[i]
+		// skip quoted strings
 
-		if i+1 < lenRunes {
-			nextRune = runes[i+1]
-		} else {
-			nextRune = 0
+		if currRune == '\'' || currRune == '"' {
+			// forward to the next rune outside the quoted string
+			quoteChar := currRune
+			sb.WriteRune(currRune)
+			i++ // move past opening quote
+			for i < lenRunes {
+				sb.WriteRune(runes[i])
+				if runes[i] == quoteChar {
+					// Check for escaped quote (e.g., '' or "")
+					if i+1 < lenRunes && runes[i+1] == quoteChar {
+						i++
+						sb.WriteRune(runes[i]) // write second quote of pair
+						i++
+						continue
+					}
+					break // found closing quote
+				}
+				i++
+			}
+			continue
 		}
 
 		if currRune != db.PlaceholderKey && currRune != db.PlaceholderValue {
 			sb.WriteRune(currRune)
 			continue
 		}
-
-		if (currRune == db.PlaceholderValue && nextRune == db.PlaceholderValue) ||
-			(currRune == db.PlaceholderKey && nextRune == db.PlaceholderKey) {
-			sb.WriteRune(currRune)
-			i++
-			continue
-		}
-
-		// log.Printf("%d curr: %s next: %s", i, string(currRune), string(nextRune))
 
 		if nthArg >= len(args) {
 			return "", nil, fmt.Errorf("replaceArgs: Expecting #%d arg. Got: %d args.", (nthArg + 1), len(args))
@@ -319,6 +327,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		arg := args[nthArg]
 		nthArg++
 
+		// replace column and table names ("Key")
 		if currRune == db.PlaceholderKey {
 			switch v := arg.(type) {
 			case *string:
@@ -344,8 +353,6 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		}
 
 		rv := reflect.ValueOf(arg)
-		// log.Printf("Placeholder! %#v %v", arg, rv.IsValid())
-
 		if rv.IsValid() && rv.Type().Kind() == reflect.Slice {
 			l := rv.Len()
 			if l == 0 {
@@ -408,7 +415,6 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 
 		newArgs = append(newArgs, arg)
 		db.appendPlaceholder(&sb, len(newArgs)-1)
-
 	}
 
 	// append left over args
