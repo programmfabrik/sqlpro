@@ -171,6 +171,14 @@ func (db *DB) QueryContext(ctx context.Context, target interface{}, query string
 		return err
 	}
 
+	if (db.Debug || db.DebugQuery) && !strings.HasPrefix(query, "INSERT INTO") {
+		// log.Printf("Query: %s Args: %v", query, args)
+		err = db.PrintQueryContext(ctx, query, args...)
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	// log.Printf("RowMode: %s %v", targetValue.Type().Kind(), rowMode)
 	rows, err = db.db.QueryContext(ctx, query0, newArgs...)
 	if err != nil {
@@ -188,14 +196,6 @@ func (db *DB) QueryContext(ctx context.Context, target interface{}, query string
 	err = Scan(target, rows)
 	if err != nil {
 		return db.debugError(err)
-	}
-
-	if (db.Debug || db.DebugQuery) && !strings.HasPrefix(query, "INSERT INTO") {
-		// log.Printf("Query: %s Args: %v", query, args)
-		err = db.PrintQueryContext(ctx, query, args...)
-		if err != nil {
-			panic(err)
-		}
 	}
 
 	return nil
