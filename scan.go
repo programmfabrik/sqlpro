@@ -135,10 +135,11 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 		case *string, string:
 			data[idx] = &sql.NullString{}
 			nullValueByIdx[idx] = fieldV
-		case *int64, int64, uint64, *uint64, int, *int:
+		case *int64, int64, *int32, int32, *int16, int16, *int8, int8, *int, int,
+			uint32, *uint32, uint16, *uint16, uint8, *uint8, uint64, *uint64, uint, *uint:
 			data[idx] = &sql.NullInt64{}
 			nullValueByIdx[idx] = fieldV
-		case *float64, float64:
+		case *float64, float64, *float32, float32:
 			data[idx] = &sql.NullFloat64{}
 			nullValueByIdx[idx] = fieldV
 		case *bool, bool:
@@ -182,7 +183,6 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 			}
 			continue
 		case *NullRawMessage:
-
 			if (*v).Valid {
 				if fieldV.Type().Kind() == reflect.Ptr {
 					fieldV.Set(reflect.ValueOf(&(*v).Data))
@@ -196,7 +196,7 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 		}
 
 		switch v0 := fieldV.Interface().(type) {
-		case *string, *int64, *uint64, *float64, *int, *bool:
+		case *string, *int32, *int16, *int8, *int64, *uint64, *uint, *uint16, *uint32, *float64, *int, *bool:
 			switch v := data[idx].(type) {
 			case *sql.NullBool:
 				if (*v).Valid {
@@ -220,6 +220,12 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 					case *int32:
 						i32 := int32(i64)
 						fieldV.Set(reflect.ValueOf(&i32))
+					case *int16:
+						i16 := int16(i64)
+						fieldV.Set(reflect.ValueOf(&i16))
+					case *int8:
+						i8 := int8(i64)
+						fieldV.Set(reflect.ValueOf(&i8))
 					case *int:
 						i := int(i64)
 						fieldV.Set(reflect.ValueOf(&i))
@@ -229,6 +235,12 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 					case *uint32:
 						ui32 := uint32(i64)
 						fieldV.Set(reflect.ValueOf(&ui32))
+					case *uint16:
+						ui16 := uint16(i64)
+						fieldV.Set(reflect.ValueOf(&ui16))
+					case *uint8:
+						ui8 := uint8(i64)
+						fieldV.Set(reflect.ValueOf(&ui8))
 					case *uint:
 						ui := uint(i64)
 						fieldV.Set(reflect.ValueOf(&ui))
@@ -238,25 +250,32 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 				}
 			case *sql.NullFloat64:
 				if (*v).Valid {
-					fieldV.Set(reflect.ValueOf(&(*v).Float64))
+					f64 := (*v).Float64
+					switch v0.(type) {
+					case *float64:
+						fieldV.Set(reflect.ValueOf(&f64))
+					case *float32:
+						f32 := float32(f64)
+						fieldV.Set(reflect.ValueOf(&f32))
+					}
 				} else {
 					fieldV.Set(reflect.Zero(fieldV.Type()))
 				}
 			}
-		case string, int64, float64, int, int32:
+		case string, int64, float64, int, int32, int8, int16:
 			switch v := data[idx].(type) {
 			case *sql.NullString:
 				fieldV.SetString((*v).String)
 			case *sql.NullInt64:
 				switch v0.(type) {
-				case int64, int32, int:
+				case int64, int32, int16, int8, int:
 					fieldV.SetInt((*v).Int64)
 				}
 
 			case *sql.NullFloat64:
 				fieldV.SetFloat((*v).Float64)
 			}
-		case uint64:
+		case uint64, uint32, uint16, uint8, uint:
 			switch v := data[idx].(type) {
 			case *sql.NullInt64:
 				fieldV.SetUint(uint64((*v).Int64))
@@ -275,7 +294,7 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 					fieldV.Set(reflect.Zero(fieldV.Type()))
 				}
 			default:
-				panic("Unable to read back time.Time.")
+				panic(fmt.Sprintf("sqlpro: unable to read back time.Time into %q", cols[idx]))
 			}
 		case *time.Time:
 			switch v := data[idx].(type) {
@@ -286,10 +305,10 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 					fieldV.Set(reflect.Zero(fieldV.Type()))
 				}
 			default:
-				panic("Unable to read back *time.Time.")
+				panic(fmt.Sprintf("sqlpro: unable to read back *time.Time into %q", cols[idx]))
 			}
 		default:
-			panic("Unable to read back null.")
+			panic(fmt.Sprintf("sqlpro: unable to read back null into %q: %T", cols[idx], fieldV.Interface()))
 		}
 	}
 	return nil
