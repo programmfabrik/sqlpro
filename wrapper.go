@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/tw"
 	"github.com/pkg/errors"
 	"github.com/programmfabrik/golib"
 	"github.com/yudai/pp"
@@ -273,9 +274,9 @@ func (db *DB) PrintQueryContext(ctx context.Context, query string, args ...inter
 
 	fmt.Fprint(os.Stdout, db.sqlDebug(query0, newArgs))
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader(cols)
-	table.AppendBulk(data)
-	table.SetCaption(true, "Took: "+time.Since(start).String())
+	table.Header(cols)
+	table.Bulk(data)
+	table.Caption(tw.Caption{Text: "Took: " + time.Since(start).String()})
 	table.Render()
 
 	return nil
