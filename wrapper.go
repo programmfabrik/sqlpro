@@ -145,6 +145,27 @@ func (db *DB) Version() (version string, err error) {
 	return prefix + version, nil
 }
 
+// Name returns the name the connected database
+func (db *DB) Name() (name string, err error) {
+	var selVersion string
+	switch db.Driver {
+	case POSTGRES:
+		selVersion = "SELECT current_database()"
+
+	case SQLITE3:
+		selVersion = `SELECT file FROM pragma_database_list WHERE name = 'main'`
+	}
+	if selVersion != "" {
+		err = db.Query(&name, selVersion)
+		if err != nil {
+			return "", fmt.Errorf("reading database version failed: %w", err)
+		}
+	} else {
+		name = "<unsupported driver>"
+	}
+	return name, nil
+}
+
 // Log returns a copy with debug enabled
 func (db *DB) Log() *DB {
 	newDB := *db
