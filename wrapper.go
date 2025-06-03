@@ -49,7 +49,8 @@ type DB struct {
 	txAfterCommit   []func()
 	txAfterRollback []func()
 
-	txBeginMtx *sync.Mutex // used to protect write tx begin for SQLITE3
+	txBeginMtx     *sync.Mutex // used to protect write tx begin for SQLITE3
+	txExecQueryMtx *sync.Mutex // used to protect a tx from mutual use during exec or query
 }
 
 // DB returns the wrapped sql.DB handle
@@ -100,6 +101,7 @@ func New(dbWrap dbWrappable) *DB {
 	db = new(DB)
 
 	db.txBeginMtx = &sync.Mutex{}
+
 	db.db = dbWrap
 
 	// DEFAULTs for sqlite
@@ -178,7 +180,7 @@ func (db *DB) Query(target interface{}, query string, args ...interface{}) error
 	return db.QueryContext(context.Background(), target, query, args...)
 }
 
-// Query runs a query and fills the received rows or row into the target.
+// QueryContext runs a query and fills the received rows or row into the target.
 // It is a wrapper method around the
 func (db *DB) QueryContext(ctx context.Context, target interface{}, query string, args ...interface{}) error {
 	var (
@@ -187,6 +189,11 @@ func (db *DB) QueryContext(ctx context.Context, target interface{}, query string
 		query0  string
 		newArgs []interface{}
 	)
+
+	if db.sqlTx != nil {
+		db.txExecQueryMtx.Lock()
+		defer db.txExecQueryMtx.Unlock()
+	}
 
 	query0, newArgs, err = db.replaceArgs(query, args...)
 	if err != nil {

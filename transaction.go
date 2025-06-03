@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log"
+	"sync"
 )
 
 // txBegin starts a new transaction, this panics if
@@ -22,6 +23,7 @@ func (db *DB) txBeginContext(ctx context.Context, topts *sql.TxOptions) (*DB, er
 	}
 
 	db2 := *db
+	db2.txExecQueryMtx = &sync.Mutex{}
 
 	wMode := topts == nil || !topts.ReadOnly
 

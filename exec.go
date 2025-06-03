@@ -712,6 +712,11 @@ func (db *DB) execContext(ctx context.Context, execSql string, args ...interface
 		newArgs  []interface{}
 	)
 
+	if db.txExecQueryMtx != nil {
+		db.txExecQueryMtx.Lock()
+		defer db.txExecQueryMtx.Unlock()
+	}
+
 	if db.Debug || db.DebugExec {
 		log.Printf("%s SQL: %s\nARGS:\n%s", db, golib.CutStr(execSql, 2000, "..."), argsToString(args...))
 	}
