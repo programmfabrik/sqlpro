@@ -14,7 +14,6 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/pkg/errors"
-	"github.com/programmfabrik/golib"
 	"github.com/yudai/pp"
 )
 
@@ -82,7 +81,7 @@ type PlaceholderMode int
 
 const (
 	DOLLAR   PlaceholderMode = 1
-	QUESTION                 = 2
+	QUESTION PlaceholderMode = 2
 )
 
 type dbWrappable interface {
@@ -190,7 +189,7 @@ func (db *DB) QueryContext(ctx context.Context, target interface{}, query string
 		newArgs []interface{}
 	)
 
-	if db.sqlTx != nil {
+	if db.txExecQueryMtx != nil {
 		db.txExecQueryMtx.Lock()
 		defer db.txExecQueryMtx.Unlock()
 	}
@@ -308,5 +307,5 @@ func (db *DB) sqlDebug(sqlS string, args []interface{}) string {
 	// if len(sqlS) > 1000 {
 	// 	return fmt.Sprintf("SQL:\n %s \nARGS:\n%v\n", sqlS[0:1000], argsToString(args...))
 	// }
-	return fmt.Sprintf("%s SQL:\n %s \nARGS:\n%v\n", db, golib.CutStr(sqlS, 2000, "..."), argsToString(args...))
+	return fmt.Sprintf("%s SQL:\n %s \nARGS:\n%v\n", db, sqlS, argsToString(args...))
 }

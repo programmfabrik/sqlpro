@@ -578,7 +578,7 @@ func argsToString(args ...interface{}) string {
 	sb = strings.Builder{}
 	for idx, arg := range args {
 		if arg == nil {
-			sb.WriteString(fmt.Sprintf(" #%d <nil>\n", idx))
+			sb.WriteString(fmt.Sprintf(" #%d <nil>\n", idx+1))
 			continue
 		}
 
@@ -598,7 +598,7 @@ func argsToString(args ...interface{}) string {
 		}
 		rv = reflect.ValueOf(arg)
 		argPrint = reflect.Indirect(rv).Interface()
-		sb.WriteString(fmt.Sprintf(" #%d %s "+s+"\n", idx, rv.Type(), argPrint))
+		sb.WriteString(fmt.Sprintf(" #%d %s "+s+"\n", idx+1, rv.Type(), argPrint))
 	}
 	return sb.String()
 }

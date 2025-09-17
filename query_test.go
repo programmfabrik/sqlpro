@@ -945,6 +945,29 @@ func TestReplaceArgs(t *testing.T) {
 
 	runPlaceholderTests(t, db2, []phTest{
 		{"ID IN ?", ifcArr{int_args}, "ID IN ($1,$2,$3,$4)", false, 4},
+
+		{`UPDATE "value"
+            SET
+                "file_id" = NULL,
+                "json" = jsonb_build_object(
+                        'created_at', f.created_at,
+                        'deleted_at', NOW(),
+                        'filename',   f.filename,
+                        'filesize',   f.filesize
+                )
+        LEFT JOIN "file" f ON ("file"."id" = "value"."file_id")
+        WHERE "id" IN ?`, ifcArr{[]int64{2}},
+			`UPDATE "value"
+            SET
+                "file_id" = NULL,
+                "json" = jsonb_build_object(
+                        'created_at', f.created_at,
+                        'deleted_at', NOW(),
+                        'filename',   f.filename,
+                        'filesize',   f.filesize
+                )
+        LEFT JOIN "file" f ON ("file"."id" = "value"."file_id")
+        WHERE "id" IN ($1)`, false, 1},
 	})
 
 }
@@ -990,8 +1013,7 @@ func runPlaceholderTests(t *testing.T, db *DB, phTests []phTest) {
 				t.Errorf("Error expected for: %s", te.sql)
 				return
 			}
-			if sqlS != te.expSql {
-				t.Errorf("Replace\n[%s] not matching\n[%s]", sqlS, te.expSql)
+			if !assert.Equal(t, te.expSql, sqlS) {
 				return
 			}
 			if len(newArgs) != te.expArgCount {
