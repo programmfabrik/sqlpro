@@ -175,7 +175,10 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 				newData := reflect.New(fieldV.Type())
 				err = json.Unmarshal((*v).Data, newData.Interface())
 				if err != nil {
-					return errors.Wrapf(err, "Error unmarshalling data: %q", string((*v).Data))
+					fInfo := info[cols[idx]]
+					if !fInfo.jsonIgnoreError {
+						return errors.Wrapf(err, "Error unmarshalling data: %q", string((*v).Data))
+					}
 				}
 				fieldV.Set(reflect.Indirect(reflect.Value(newData)))
 			} else {

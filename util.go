@@ -139,17 +139,17 @@ func (nj *NullRawMessage) Scan(value interface{}) error {
 }
 
 type fieldInfo struct {
-	structField reflect.StructField
-	name        string
-	dbName      string
-	omitEmpty   bool
-	primaryKey  bool
-	null        bool
-	readOnly    bool
-	notNull     bool
-	isJson      bool
-	emptyValue  string
-	ptr         bool // set true if the field is a pointer
+	structField             reflect.StructField
+	name                    string
+	dbName                  string
+	omitEmpty               bool
+	primaryKey              bool
+	null                    bool
+	readOnly                bool
+	notNull                 bool
+	isJson, jsonIgnoreError bool
+	emptyValue              string
+	ptr                     bool // set true if the field is a pointer
 }
 
 // allowNull returns true if the given can store "null" values
@@ -252,6 +252,8 @@ func getStructInfo(t reflect.Type) structInfo {
 				info.notNull = true
 			case "json":
 				info.isJson = true
+			case "json_ignore_error":
+				info.jsonIgnoreError = true
 			case "readonly":
 				info.readOnly = true
 			default:

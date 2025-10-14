@@ -680,7 +680,9 @@ func (db *DB) valuesFromStruct(data interface{}) (map[string]interface{}, struct
 			}
 			actualData, err = json.Marshal(actualData)
 			if err != nil {
-				return nil, nil, errors.Wrap(err, "Unable to marshal as data as json.")
+				if !fieldInfo.jsonIgnoreError {
+					return nil, nil, errors.Wrap(err, "Unable to marshal as data as json.")
+				}
 			}
 			// If the database accepts "null" we write NULL, if the db does not accept null
 			// we write "null", if it is not specified we write NULL if the json renders to "null"
