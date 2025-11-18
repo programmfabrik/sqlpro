@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/lib/pq"
 	"github.com/pkg/errors"
 )
 
@@ -341,82 +340,82 @@ func (db *DB) UpdateBulkContext(ctx context.Context, table string, data interfac
 	return nil
 }
 
-func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
-	var (
-		rv         reflect.Value
-		structMode bool
-		err        error
-	)
+// func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
+// 	var (
+// 		rv         reflect.Value
+// 		structMode bool
+// 		err        error
+// 	)
 
-	rv, structMode, err = checkData(data)
-	if err != nil {
-		return err
-	}
+// 	rv, structMode, err = checkData(data)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	if structMode {
-		return fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
-	}
+// 	if structMode {
+// 		return fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
+// 	}
 
-	key_map := make(map[string]*fieldInfo, 0)
-	rows := make([]map[string]interface{}, 0)
+// 	key_map := make(map[string]*fieldInfo, 0)
+// 	rows := make([]map[string]interface{}, 0)
 
-	if rv.Len() == 0 {
-		return nil
-	}
+// 	if rv.Len() == 0 {
+// 		return nil
+// 	}
 
-	for i := 0; i < rv.Len(); i++ {
-		row := reflect.Indirect(rv.Index(i)).Interface()
+// 	for i := 0; i < rv.Len(); i++ {
+// 		row := reflect.Indirect(rv.Index(i)).Interface()
 
-		values, structInfo, err := db.valuesFromStruct(row)
+// 		values, structInfo, err := db.valuesFromStruct(row)
 
-		if err != nil {
-			return errors.Wrap(err, "sqlpro.InsertBulk error.")
-		}
+// 		if err != nil {
+// 			return errors.Wrap(err, "sqlpro.InsertBulk error.")
+// 		}
 
-		rows = append(rows, values)
-		for key := range values {
-			key_map[key] = structInfo[key]
-		}
-	}
+// 		rows = append(rows, values)
+// 		for key := range values {
+// 			key_map[key] = structInfo[key]
+// 		}
+// 	}
 
-	txn, err := db.sqlDB.Begin()
-	if err != nil {
-		return db.sqlError(err, "BEGIN TRANSACTION", []interface{}{})
-	}
+// 	txn, err := db.sqlDB.Begin()
+// 	if err != nil {
+// 		return db.sqlError(err, "BEGIN TRANSACTION", []interface{}{})
+// 	}
 
-	keys := make([]string, 0, len(key_map))
-	for key := range key_map {
-		keys = append(keys, key)
-	}
+// 	keys := make([]string, 0, len(key_map))
+// 	for key := range key_map {
+// 		keys = append(keys, key)
+// 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(table, keys...))
-	if err != nil {
-		return db.sqlError(err, "Prepare", []interface{}{})
-	}
+// 	stmt, err := txn.Prepare(pq.CopyIn(table, keys...))
+// 	if err != nil {
+// 		return db.sqlError(err, "Prepare", []interface{}{})
+// 	}
 
-	for _, row := range rows {
-		values := make([]interface{}, 0, len(key_map))
-		for _, key := range keys {
-			values = append(values, row[key])
-		}
-		_, err = stmt.Exec(values...)
-		if err != nil {
-			return db.sqlError(err, "Exec", values)
-		}
-	}
+// 	for _, row := range rows {
+// 		values := make([]interface{}, 0, len(key_map))
+// 		for _, key := range keys {
+// 			values = append(values, row[key])
+// 		}
+// 		_, err = stmt.Exec(values...)
+// 		if err != nil {
+// 			return db.sqlError(err, "Exec", values)
+// 		}
+// 	}
 
-	_, err = stmt.Exec()
-	if err != nil {
-		return db.sqlError(err, "Exec DONE", []interface{}{})
-	}
+// 	_, err = stmt.Exec()
+// 	if err != nil {
+// 		return db.sqlError(err, "Exec DONE", []interface{}{})
+// 	}
 
-	err = txn.Commit()
-	if err != nil {
-		return db.sqlError(err, "Commit DONE", []interface{}{})
-	}
+// 	err = txn.Commit()
+// 	if err != nil {
+// 		return db.sqlError(err, "Commit DONE", []interface{}{})
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 func (db *DB) insertStruct(ctx context.Context, table string, row interface{}) (int64, structInfo, error) {
 	values, info, err := db.valuesFromStruct(row)

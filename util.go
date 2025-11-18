@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
+
 	"github.com/pkg/errors"
 )
 
@@ -629,17 +631,20 @@ func (db *DB) IsClosed() bool {
 func Open(driverS, dsn string) (*DB, error) {
 
 	var driver dbDriver
+	var driverName string
 
 	switch driverS {
 	default:
 		return nil, fmt.Errorf(`Unknown driver "%s"`, driverS)
 	case "sqlite3":
 		driver = SQLITE3
+		driverName = string(driver)
 	case "postgres":
 		driver = POSTGRES
+		driverName = "pgx"
 	}
 
-	conn, err := sql.Open(string(driver), dsn)
+	conn, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, err
 	}
