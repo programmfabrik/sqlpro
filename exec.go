@@ -6,10 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"reflect"
+	"slices"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/pkg/errors"
+	"github.com/programmfabrik/golib"
+	"github.com/yudai/pp"
 )
 
 // checkData checks that the given data is either one of:
@@ -48,8 +53,8 @@ func checkData(data interface{}) (rv reflect.Value, structMode bool, err error) 
 	return rv, structMode, nil
 }
 
-func (db *DB) Insert(table string, data interface{}) error {
-	return db.InsertContext(context.Background(), table, data)
+func (db2 *db) Insert(table string, data any) error {
+	return db2.InsertContext(context.Background(), table, data)
 }
 
 // Insert takes a table name and a struct and inserts
@@ -67,7 +72,7 @@ func (db *DB) Insert(table string, data interface{}) error {
 // result.LastInsertId will be used to set the first primary
 // key column.
 
-func (db *DB) InsertContext(ctx context.Context, table string, data interface{}) error {
+func (db2 *db) InsertContext(ctx context.Context, table string, data interface{}) error {
 	var (
 		rv         reflect.Value
 		structMode bool
@@ -82,7 +87,7 @@ func (db *DB) InsertContext(ctx context.Context, table string, data interface{})
 	if !structMode {
 		for i := 0; i < rv.Len(); i++ {
 			row := reflect.Indirect(rv.Index(i))
-			insert_id, structInfo, err := db.insertStruct(ctx, table, row.Interface())
+			insert_id, structInfo, err := db2.insertStruct(ctx, table, row.Interface())
 			if err != nil {
 				return err
 			}
@@ -92,7 +97,7 @@ func (db *DB) InsertContext(ctx context.Context, table string, data interface{})
 			}
 		}
 	} else {
-		insert_id, structInfo, err := db.insertStruct(ctx, table, rv.Interface())
+		insert_id, structInfo, err := db2.insertStruct(ctx, table, rv.Interface())
 		if err != nil {
 			return err
 		}
@@ -139,8 +144,8 @@ func setPrimaryKey(rv reflect.Value, id int64) {
 	}
 }
 
-func (db *DB) InsertBulk(table string, data interface{}) error {
-	return db.InsertBulkContext(context.Background(), table, data)
+func (db2 *db) InsertBulk(table string, data interface{}) error {
+	return db2.InsertBulkContext(context.Background(), table, data)
 }
 
 // InsertBulk takes a table name and a slice of struct and inserts
@@ -153,17 +158,81 @@ func (db *DB) InsertBulk(table string, data interface{}) error {
 // []struct
 //
 // sqlpro will executes one INSERT statement per call.
-func (db *DB) InsertBulkContext(ctx context.Context, table string, data interface{}) error {
-	return db.insertBulkContext(ctx, table, data, false, nil)
+func (db2 *db) InsertBulkContext(ctx context.Context, table string, data interface{}) error {
+	return db2.insertBulkContext(ctx, table, data, false, nil)
 }
 
 // InsertBulkOnConflictDoNothingContext works like InsertBulkContext but adds a
 // "ON CONFLICT DO NOTHING" to the insert command.
-func (db *DB) InsertBulkOnConflictDoNothingContext(ctx context.Context, table string, data interface{}, cols ...string) error {
-	return db.insertBulkContext(ctx, table, data, true, cols)
+func (db2 *db) InsertBulkOnConflictDoNothingContext(ctx context.Context, table string, data interface{}, cols ...string) error {
+	return db2.insertBulkContext(ctx, table, data, true, cols)
 }
 
-func (db *DB) insertBulkContext(ctx context.Context, table string, data interface{}, onConflictDoNothing bool, conflictCols []string) error {
+type copyFromData struct {
+	keyMap      map[string]*fieldInfo
+	columns     []string
+	rows        []map[string]any
+	values      []any
+	nextCounter int
+	db          *db
+}
+
+func newCopyFromData(db *db, keyMap map[string]*fieldInfo, rows []map[string]any) (cfd *copyFromData) {
+	return &copyFromData{
+		keyMap:      keyMap,
+		columns:     slices.Collect(maps.Keys(keyMap)),
+		rows:        rows,
+		nextCounter: -1,
+		db:          db,
+	}
+}
+
+func (cfd copyFromData) Columns() []string {
+	return cfd.columns
+}
+
+func (cfd copyFromData) Len() int64 {
+	return int64(len(cfd.rows))
+}
+
+func (cfd *copyFromData) Next() bool {
+	if len(cfd.rows)-1 > cfd.nextCounter {
+		cfd.nextCounter++
+		return true
+	}
+	return false
+}
+
+func (cfd copyFromData) Err() error {
+	return nil
+}
+
+func (cfd copyFromData) Values() ([]any, error) {
+	values := make([]any, len(cfd.columns))
+	row := cfd.rows[cfd.nextCounter]
+	for idx, col := range cfd.columns {
+		values[idx] = cfd.db.valueForInsert(row[col], cfd.keyMap[col])
+	}
+	return values, nil
+}
+
+func (db2 *db) copyFrom(ctx context.Context, table string, data *copyFromData) error {
+	pgxConn := db2.pgxConn()
+	if pgxConn == nil {
+		panic("copyFrom needs pgx connection")
+	}
+
+	rowsAffected, err := pgxConn.CopyFrom(ctx, pgx.Identifier{table}, data.Columns(), data)
+	if err != nil {
+		return err
+	}
+	if err == nil && rowsAffected != data.Len() {
+		err = ErrMismatchedRowsAffected
+	}
+	return nil
+}
+
+func (db2 *db) insertBulkContext(ctx context.Context, table string, data any, onConflictDoNothing bool, conflictCols []string) error {
 	var (
 		rv         reflect.Value
 		structMode bool
@@ -179,8 +248,8 @@ func (db *DB) insertBulkContext(ctx context.Context, table string, data interfac
 		return fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
 	}
 
-	key_map := make(map[string]*fieldInfo, 0)
-	rows := make([]map[string]interface{}, 0)
+	key_map := map[string]*fieldInfo{}
+	rows := []map[string]any{}
 
 	if rv.Len() == 0 {
 		return nil
@@ -188,24 +257,26 @@ func (db *DB) insertBulkContext(ctx context.Context, table string, data interfac
 
 	for i := 0; i < rv.Len(); i++ {
 		row := reflect.Indirect(rv.Index(i)).Interface()
-
-		values, structInfo, err := db.valuesFromStruct(row)
-
+		values, structInfo, err := db2.valuesFromStruct(row)
 		if err != nil {
-			return errors.Wrap(err, "sqlpro.InsertBulk error.")
+			return fmt.Errorf("sqlpro.insertBulkContext: %w", err)
 		}
-
 		rows = append(rows, values)
 		for key := range values {
 			key_map[key] = structInfo[key]
 		}
 	}
 
+	// Use faster COPY FROM for postgres if possible
+	if !onConflictDoNothing && db2.pgxConn() != nil {
+		return db2.copyFrom(ctx, table, newCopyFromData(db2, key_map, rows))
+	}
+
 	insert := strings.Builder{} // make([]string, 0)
 	keys := make([]string, 0, len(key_map))
 
 	insert.WriteString("INSERT INTO ")
-	insert.WriteString(db.Esc(table))
+	insert.WriteString(db2.Esc(table))
 	insert.WriteString(" (")
 
 	idx := 0
@@ -213,7 +284,7 @@ func (db *DB) insertBulkContext(ctx context.Context, table string, data interfac
 		if idx > 0 {
 			insert.WriteRune(',')
 		}
-		insert.WriteString(db.Esc(key))
+		insert.WriteString(db2.Esc(key))
 		keys = append(keys, key)
 		idx++
 	}
@@ -229,7 +300,7 @@ func (db *DB) insertBulkContext(ctx context.Context, table string, data interfac
 			if idx2 > 0 {
 				insert.WriteRune(',')
 			}
-			insert.WriteString(db.EscValueForInsert(row[key], key_map[key]))
+			insert.WriteString(db2.EscValueForInsert(row[key], key_map[key]))
 		}
 		insert.WriteRune(')')
 		insert.WriteRune('\n')
@@ -239,7 +310,7 @@ func (db *DB) insertBulkContext(ctx context.Context, table string, data interfac
 		if len(conflictCols) > 0 {
 			cCols := []string{}
 			for _, cc := range conflictCols {
-				cCols = append(cCols, db.Esc(cc))
+				cCols = append(cCols, db2.Esc(cc))
 			}
 			insert.WriteString(" ON CONFLICT (" + strings.Join(cCols, ",") + ") DO NOTHING")
 		} else {
@@ -247,25 +318,25 @@ func (db *DB) insertBulkContext(ctx context.Context, table string, data interfac
 		}
 	}
 
-	rowsAffected, _, err := db.execContext(ctx, insert.String())
+	rowsAffected, _, err := db2.execContext(ctx, insert.String())
 	if !onConflictDoNothing && err == nil && rowsAffected != int64(len(rows)) {
 		err = ErrMismatchedRowsAffected
 	}
 	if err != nil {
-		return db.sqlError(err, insert.String(), []interface{}{})
+		return db2.sqlError(err, insert.String(), []interface{}{})
 	}
 
 	return nil
 }
 
-func (db *DB) UpdateBulk(table string, data interface{}) error {
-	return db.UpdateBulkContext(context.Background(), table, data)
+func (db2 *db) UpdateBulk(table string, data interface{}) error {
+	return db2.UpdateBulkContext(context.Background(), table, data)
 }
 
 // UpdateBulkContext updates all records of the passed slice. It using a single
 // exec to send the data to the database. This is generally faster than calling Update
 // with a slice (which sends individual update requests).
-func (db *DB) UpdateBulkContext(ctx context.Context, table string, data interface{}) error {
+func (db2 *db) UpdateBulkContext(ctx context.Context, table string, data interface{}) error {
 	var (
 		rv         reflect.Value
 		structMode bool
@@ -289,18 +360,18 @@ func (db *DB) UpdateBulkContext(ctx context.Context, table string, data interfac
 	update := strings.Builder{} // make([]string, 0)
 	for i := 0; i < l; i++ {
 		row := reflect.Indirect(rv.Index(i)).Interface()
-		values, structInfo, err := db.valuesFromStruct(row)
+		values, structInfo, err := db2.valuesFromStruct(row)
 		if err != nil {
 			return errors.Wrap(err, "sqlpro.UpdateBulk error.")
 		}
 		where := strings.Builder{}
 		whereCount := 0
 		update.WriteString("UPDATE ")
-		update.WriteString(db.Esc(table))
+		update.WriteString(db2.Esc(table))
 		update.WriteString(" SET ")
 		idx2 := 0
 		for key, value := range values {
-			value2 := db.nullValue(value, structInfo[key])
+			value2 := db2.nullValue(value, structInfo[key])
 			if structInfo[key].primaryKey {
 				// skip primary keys for update
 				if value2 == nil {
@@ -309,18 +380,18 @@ func (db *DB) UpdateBulkContext(ctx context.Context, table string, data interfac
 				if whereCount > 0 {
 					where.WriteString(" AND ")
 				}
-				where.WriteString(db.Esc(key))
+				where.WriteString(db2.Esc(key))
 				where.WriteRune('=')
-				where.WriteString(db.EscValueForInsert(value2, structInfo[key]))
+				where.WriteString(db2.EscValueForInsert(value2, structInfo[key]))
 				whereCount++
 			} else {
 				if idx2 > 0 {
 					update.WriteRune(',')
 				}
 				idx2++
-				update.WriteString(db.Esc(key))
+				update.WriteString(db2.Esc(key))
 				update.WriteRune('=')
-				update.WriteString(db.EscValueForInsert(value2, structInfo[key]))
+				update.WriteString(db2.EscValueForInsert(value2, structInfo[key]))
 			}
 		}
 		update.WriteString(" WHERE ")
@@ -329,119 +400,113 @@ func (db *DB) UpdateBulkContext(ctx context.Context, table string, data interfac
 		update.WriteRune('\n')
 	}
 
-	rowsAffected, _, err := db.execContext(ctx, update.String())
+	rowsAffected, _, err := db2.execContext(ctx, update.String())
 	if err == nil && rowsAffected != 1 {
 		err = ErrMismatchedRowsAffected
 	}
 	if err != nil {
-		return db.sqlError(err, update.String(), []interface{}{})
+		return db2.sqlError(err, update.String(), []interface{}{})
 	}
 
 	return nil
 }
 
-// func (db *DB) InsertBulkCopyIn(table string, data interface{}) error {
-// 	var (
-// 		rv         reflect.Value
-// 		structMode bool
-// 		err        error
-// 	)
+func (db2 *db) InsertBulkCopyInContext(ctx context.Context, table string, data any) error {
 
-// 	rv, structMode, err = checkData(data)
-// 	if err != nil {
-// 		return err
-// 	}
+	if db2.driver != POSTGRES {
+		return fmt.Errorf("InsertBulkCopyIn: not supported for driver %q", db2.driver)
+	}
 
-// 	if structMode {
-// 		return fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
-// 	}
+	var (
+		rv         reflect.Value
+		structMode bool
+		err        error
+	)
 
-// 	key_map := make(map[string]*fieldInfo, 0)
-// 	rows := make([]map[string]interface{}, 0)
+	rv, structMode, err = checkData(data)
+	if err != nil {
+		return err
+	}
 
-// 	if rv.Len() == 0 {
-// 		return nil
-// 	}
+	if structMode {
+		return fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
+	}
 
-// 	for i := 0; i < rv.Len(); i++ {
-// 		row := reflect.Indirect(rv.Index(i)).Interface()
+	keys_map := map[string]bool{}
+	rows := []map[string]any{}
 
-// 		values, structInfo, err := db.valuesFromStruct(row)
+	if rv.Len() == 0 {
+		return nil
+	}
 
-// 		if err != nil {
-// 			return errors.Wrap(err, "sqlpro.InsertBulk error.")
-// 		}
+	for i := 0; i < rv.Len(); i++ {
+		row := reflect.Indirect(rv.Index(i)).Interface()
+		values, _, err := db2.valuesFromStruct(row)
+		if err != nil {
+			return errors.Wrap(err, "sqlpro.InsertBulk error.")
+		}
+		rows = append(rows, values)
+		for key := range values {
+			if keys_map[key] {
+				continue
+			}
+			keys_map[key] = true
+		}
+	}
 
-// 		rows = append(rows, values)
-// 		for key := range values {
-// 			key_map[key] = structInfo[key]
-// 		}
-// 	}
+	keys := slices.Sorted(maps.Keys(keys_map))
+	allRows := make([][]any, len(rows))
+	for idx, row := range rows {
+		values := make([]any, len(keys))
+		for idx, key := range keys {
+			values[idx] = row[key]
+		}
+		allRows[idx] = values
+	}
 
-// 	txn, err := db.sqlDB.Begin()
-// 	if err != nil {
-// 		return db.sqlError(err, "BEGIN TRANSACTION", []interface{}{})
-// 	}
+	golib.Pln("db %T", db2.sqlTx)
 
-// 	keys := make([]string, 0, len(key_map))
-// 	for key := range key_map {
-// 		keys = append(keys, key)
-// 	}
+	pp.Println(allRows)
 
-// 	stmt, err := txn.Prepare(pq.CopyIn(table, keys...))
-// 	if err != nil {
-// 		return db.sqlError(err, "Prepare", []interface{}{})
-// 	}
+	// pgConn := tx.Conn().PgConn()   // ← returns *pgconn.PgConn
 
-// 	for _, row := range rows {
-// 		values := make([]interface{}, 0, len(key_map))
-// 		for _, key := range keys {
-// 			values = append(values, row[key])
-// 		}
-// 		_, err = stmt.Exec(values...)
-// 		if err != nil {
-// 			return db.sqlError(err, "Exec", values)
-// 		}
-// 	}
+	//     rowsCopied, err := pgConn.CopyFrom(
+	//         context.Background(),
+	//         pgx.Identifier{"users"},
+	//         []string{"id", "name", "email", "age"},
+	//         pgx.CopyFromRows(yourRowsHere),
+	//     )
 
-// 	_, err = stmt.Exec()
-// 	if err != nil {
-// 		return db.sqlError(err, "Exec DONE", []interface{}{})
-// 	}
+	return fmt.Errorf("Unimplemented")
 
-// 	err = txn.Commit()
-// 	if err != nil {
-// 		return db.sqlError(err, "Commit DONE", []interface{}{})
-// 	}
+	return nil
+}
 
-// 	return nil
-// }
-
-func (db *DB) insertStruct(ctx context.Context, table string, row interface{}) (int64, structInfo, error) {
-	values, info, err := db.valuesFromStruct(row)
+func (db2 *db) insertStruct(ctx context.Context, table string, row interface{}) (int64, structInfo, error) {
+	values, info, err := db2.valuesFromStruct(row)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	sql, args, err := db.insertClauseFromValues(table, values, info)
+	sql, args, err := db2.insertClauseFromValues(table, values, info)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	if db.UseReturningForLastId {
+	if db2.UseReturningForLastId {
 		pk := info.onlyPrimaryKey()
 		if pk != nil {
 			// Fail if transaction present and not in write mode
-			if db.sqlTx != nil && !db.txWriteMode {
-				return 0, nil, fmt.Errorf("[%s] Trying to write into read-only transaction: %s", db, sql)
+			if db2.sqlTx != nil && !db2.txWriteMode {
+				return 0, nil, fmt.Errorf("[%s] Trying to write into read-only transaction: %s", db2, sql)
 			}
 
-			sql = sql + " RETURNING " + db.Esc(pk.dbName)
+			sql = sql + " RETURNING " + db2.Esc(pk.dbName)
 			var insert_id_any interface{}
-			if db.Debug || db.DebugExec {
-				log.Printf("%s SQL: %s\nARGS:\n%s", db, sql, argsToString(args...))
+			if db2.Debug || db2.DebugExec {
+				log.Printf("%s SQL: %s\nARGS:\n%s", db2, sql, argsToString(args...))
 			}
-			err := db.QueryContext(ctx, &insert_id_any, sql, args...)
+			err := db2.QueryContext(ctx, &insert_id_any, sql, args...)
 			if err != nil {
 				return 0, nil, err
 			}
@@ -452,7 +517,7 @@ func (db *DB) insertStruct(ctx context.Context, table string, row interface{}) (
 	}
 
 	// log.Printf("SQL: %s Debug: %v", sql, db.Debug)
-	rowsAffected, insert_id, err := db.execContext(ctx, sql, args...)
+	rowsAffected, insert_id, err := db2.execContext(ctx, sql, args...)
 	if err == nil && rowsAffected != 1 {
 		err = ErrMismatchedRowsAffected
 	}
@@ -463,24 +528,24 @@ func (db *DB) insertStruct(ctx context.Context, table string, row interface{}) (
 	return insert_id, info, nil
 }
 
-func (db *DB) insertClauseFromValues(table string, values map[string]interface{}, info structInfo) (string, []interface{}, error) {
+func (db2 *db) insertClauseFromValues(table string, values map[string]interface{}, info structInfo) (string, []interface{}, error) {
 	cols := make([]string, 0, len(values))
 	vs := make([]string, 0, len(values))
 	args := make([]interface{}, 0, len(values))
 
 	for col, value := range values {
-		cols = append(cols, db.Esc(col))
+		cols = append(cols, db2.Esc(col))
 		vs = append(vs, "?")
-		args = append(args, db.nullValue(value, info[col]))
+		args = append(args, db2.nullValue(value, info[col]))
 	}
 	return fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)",
-		db.Esc(table),
+		db2.Esc(table),
 		strings.Join(cols, ","),
 		strings.Join(vs, ","),
 	), args, nil
 }
 
-func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []interface{}, error) {
+func (db2 *db) updateClauseFromRow(table string, row interface{}) (string, []interface{}, error) {
 
 	var (
 		valid     bool
@@ -489,7 +554,7 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 		pk_value  interface{}
 	)
 
-	values, structInfo, err := db.valuesFromStruct(row)
+	values, structInfo, err := db2.valuesFromStruct(row)
 	if err != nil {
 		return "", nil, err
 	}
@@ -498,7 +563,7 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 	where := strings.Builder{}
 
 	update.WriteString("UPDATE ")
-	update.WriteString(db.Esc(table))
+	update.WriteString(db2.Esc(table))
 	update.WriteString(" SET ")
 
 	where.WriteString(" WHERE ")
@@ -506,16 +571,16 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 	for key, value := range values {
 		if structInfo.primaryKey(key) {
 			// skip primary keys for update
-			pk_value = db.nullValue(value, structInfo[key])
+			pk_value = db2.nullValue(value, structInfo[key])
 			if pk_value == nil {
 				return "", args, fmt.Errorf("Unable to build UPDATE clause with <nil> key: %s", key)
 			}
 			if len(whereArgs) > 0 {
 				where.WriteString(" AND ")
 			}
-			where.WriteString(db.Esc(key))
+			where.WriteString(db2.Esc(key))
 			where.WriteString("=")
-			where.WriteRune(db.PlaceholderValue)
+			where.WriteRune(db2.PlaceholderValue)
 
 			whereArgs = append(whereArgs, pk_value)
 			valid = true
@@ -523,10 +588,10 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 			if len(args) > 0 {
 				update.WriteString(",")
 			}
-			update.WriteString(db.Esc(key))
+			update.WriteString(db2.Esc(key))
 			update.WriteString("=")
-			update.WriteRune(db.PlaceholderValue)
-			args = append(args, db.nullValue(value, structInfo[key]))
+			update.WriteRune(db2.PlaceholderValue)
+			args = append(args, db2.nullValue(value, structInfo[key]))
 		}
 	}
 
@@ -540,15 +605,15 @@ func (db *DB) updateClauseFromRow(table string, row interface{}) (string, []inte
 	return update.String() + where.String(), args, nil
 }
 
-func (db *DB) Update(table string, data interface{}) error {
-	return db.UpdateContext(context.Background(), table, data)
+func (db2 *db) Update(table string, data interface{}) error {
+	return db2.UpdateContext(context.Background(), table, data)
 }
 
 // Update updates the given struct or slice of structs
 // The WHERE clause is put together from the "pk" columns.
 // If not all "pk" columns have non empty values, Update returns
 // an error.
-func (db *DB) UpdateContext(ctx context.Context, table string, data interface{}) error {
+func (db2 *db) UpdateContext(ctx context.Context, table string, data interface{}) error {
 	var (
 		rv         reflect.Value
 		structMode bool
@@ -557,7 +622,7 @@ func (db *DB) UpdateContext(ctx context.Context, table string, data interface{})
 		args       []interface{}
 	)
 
-	if db == nil {
+	if db2 == nil {
 		panic("Update on <nil> handle.")
 	}
 
@@ -567,11 +632,11 @@ func (db *DB) UpdateContext(ctx context.Context, table string, data interface{})
 	}
 
 	if structMode {
-		update, args, err = db.updateClauseFromRow(table, rv.Interface())
+		update, args, err = db2.updateClauseFromRow(table, rv.Interface())
 		if err != nil {
 			return err
 		}
-		rowsAffected, _, err := db.execContext(ctx, update, args...)
+		rowsAffected, _, err := db2.execContext(ctx, update, args...)
 		if err == nil && rowsAffected != 1 {
 			err = ErrMismatchedRowsAffected
 		}
@@ -581,11 +646,11 @@ func (db *DB) UpdateContext(ctx context.Context, table string, data interface{})
 	} else {
 		for i := 0; i < rv.Len(); i++ {
 			row := reflect.Indirect(rv.Index(i))
-			update, args, err = db.updateClauseFromRow(table, row.Interface())
+			update, args, err = db2.updateClauseFromRow(table, row.Interface())
 			if err != nil {
 				return err
 			}
-			rowsAffected, _, err := db.execContext(ctx, update, args...)
+			rowsAffected, _, err := db2.execContext(ctx, update, args...)
 			if err == nil && rowsAffected != 1 {
 				err = ErrMismatchedRowsAffected
 			}
@@ -601,7 +666,7 @@ func (db *DB) UpdateContext(ctx context.Context, table string, data interface{})
 // Save saves the given data. It performs an INSERT if the only primary key is
 // zero, and and UPDATE if it is not. It panics if it the record has no primary
 // key or less than one
-func (db *DB) Save(table string, data interface{}) error {
+func (db2 *db) Save(table string, data interface{}) error {
 
 	rv, structMode, err := checkData(data)
 	if err != nil {
@@ -609,10 +674,10 @@ func (db *DB) Save(table string, data interface{}) error {
 	}
 
 	if structMode {
-		return db.saveRow(table, data)
+		return db2.saveRow(table, data)
 	} else {
 		for i := 0; i < rv.Len(); i++ {
-			err = db.saveRow(table, rv.Index(i).Interface())
+			err = db2.saveRow(table, rv.Index(i).Interface())
 			if err != nil {
 				return err
 			}
@@ -622,10 +687,10 @@ func (db *DB) Save(table string, data interface{}) error {
 	return nil
 }
 
-func (db *DB) saveRow(table string, data interface{}) error {
+func (db2 *db) saveRow(table string, data interface{}) error {
 	row := reflect.Indirect(reflect.ValueOf(data))
 
-	values, info, err := db.valuesFromStruct(row.Interface())
+	values, info, err := db2.valuesFromStruct(row.Interface())
 	if err != nil {
 		return err
 	}
@@ -638,15 +703,15 @@ func (db *DB) saveRow(table string, data interface{}) error {
 	pk_value, ok := values[pk.dbName]
 
 	if !ok || isZero(pk_value) {
-		return db.Insert(table, data)
+		return db2.Insert(table, data)
 	} else {
-		return db.Update(table, data)
+		return db2.Update(table, data)
 	}
 }
 
 // valuesFromStruct returns the relevant values
 // from struct, as map
-func (db *DB) valuesFromStruct(data interface{}) (map[string]interface{}, structInfo, error) {
+func (db2 *db) valuesFromStruct(data interface{}) (map[string]interface{}, structInfo, error) {
 	var (
 		info   structInfo
 		values map[string]interface{}
@@ -706,28 +771,28 @@ func isZero(x interface{}) bool {
 
 // execContext wraps DB.Exec and returns the number of affected rows as reported
 // by the driver as well as the ID inserted, if the driver supports it.
-func (db *DB) execContext(ctx context.Context, execSql string, args ...interface{}) (rowsAffected, insertID int64, err error) {
+func (db2 *db) execContext(ctx context.Context, execSql string, args ...interface{}) (rowsAffected, insertID int64, err error) {
 	var (
 		execSql0 string
 		newArgs  []interface{}
 	)
 
-	if db.txExecQueryMtx != nil {
-		db.txExecQueryMtx.Lock()
-		defer db.txExecQueryMtx.Unlock()
+	if db2.txExecQueryMtx != nil {
+		db2.txExecQueryMtx.Lock()
+		defer db2.txExecQueryMtx.Unlock()
 	}
 
-	if db.Debug || db.DebugExec {
-		log.Printf("%s SQL: %s\nARGS:\n%s", db, execSql, argsToString(args...))
+	if db2.Debug || db2.DebugExec {
+		log.Printf("%s SQL: %s\nARGS:\n%s", db2, execSql, argsToString(args...))
 	}
 
 	// Fail if transaction present and not in write mode
-	if db.sqlTx != nil && !db.txWriteMode {
-		return 0, 0, fmt.Errorf("[%s] Trying to write into read-only transaction: %s", db, execSql)
+	if db2.sqlTx != nil && !db2.txWriteMode {
+		return 0, 0, fmt.Errorf("[%s] Trying to write into read-only transaction: %s", db2, execSql)
 	}
 
 	if len(args) > 0 {
-		execSql0, newArgs, err = db.replaceArgs(execSql, args...)
+		execSql0, newArgs, err = db2.replaceArgs(execSql, args...)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -742,7 +807,7 @@ func (db *DB) execContext(ctx context.Context, execSql string, args ...interface
 
 	// tries := 0
 	for {
-		result, err = db.db.ExecContext(ctx, execSql0, newArgs...)
+		result, err = db2.db.ExecContext(ctx, execSql0, newArgs...)
 		if err != nil {
 			// pp.Println(err)
 			// sqlErr, ok := err.(sqlite3.Error)
@@ -755,7 +820,7 @@ func (db *DB) execContext(ctx context.Context, execSql string, args ...interface
 			// 		}
 			// 	}
 			// }
-			return 0, 0, db.debugError(db.sqlError(err, execSql0, newArgs))
+			return 0, 0, db2.debugError(db2.sqlError(err, execSql0, newArgs))
 		}
 		break
 	}
@@ -767,13 +832,13 @@ func (db *DB) execContext(ctx context.Context, execSql string, args ...interface
 		// which is ok and not a real error (it happens with empty statements)
 	}
 
-	if !db.SupportsLastInsertId {
+	if !db2.SupportsLastInsertId {
 		return row_count, 0, nil
 	}
 
 	last_insert_id, err := result.LastInsertId()
 	if err != nil {
-		return row_count, 0, db.debugError(err)
+		return row_count, 0, db2.debugError(err)
 	}
 	return row_count, last_insert_id, nil
 }

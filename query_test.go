@@ -24,15 +24,15 @@ func TestMain(m *testing.M) {
 
 	cleanup()
 
-	db, err = Open("sqlite3", "./test.db?_foreign_keys=1&_journal=wal&_busy_timeout=1000")
+	dbConn, err = Open("sqlite3", "./test.db?_foreign_keys=1&_journal=wal&_busy_timeout=1000")
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	var v string
-	db.Log().Query(&v, "SELECT sqlite_version()")
+	dbConn.Log().Query(&v, "SELECT sqlite_version()")
 
-	err = db.Exec(`
+	err = dbConn.Exec(`
 	CREATE TABLE test(
 		a INTEGER PRIMARY KEY AUTOINCREMENT,
 		b TEXT,
@@ -54,7 +54,7 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
-var db *DB
+var dbConn DB
 
 type jsonStore struct {
 	Field  string `db:"field"`
@@ -161,7 +161,7 @@ func TestInsertSliceStructPtr(t *testing.T) {
 		},
 	}
 
-	err = db.Insert("test", data)
+	err = dbConn.Insert("test", data)
 	if err != nil {
 		t.Error(err)
 	}
@@ -174,7 +174,7 @@ func TestInsertSliceStructPtr(t *testing.T) {
 
 	readBack = testRow{}
 
-	err = db.Query(&readBack, "SELECT e FROM test WHERE E IS NOT NULL LIMIT 1")
+	err = dbConn.Query(&readBack, "SELECT e FROM test WHERE E IS NOT NULL LIMIT 1")
 	if err != nil {
 		t.Error(err)
 	}
@@ -183,7 +183,7 @@ func TestInsertSliceStructPtr(t *testing.T) {
 		t.Errorf("Time e is <nil> or wrong: %s", readBack.E)
 	}
 
-	// db.PrintQuery("SELECT * FROM test WHERE c = 'other'")
+	// dbConn.PrintQuery("SELECT * FROM test WHERE c = 'other'")
 	// pretty.Println(now2)
 }
 
@@ -199,8 +199,8 @@ func TestInsertSliceStruct(t *testing.T) {
 		},
 	}
 
-	// db.DebugNext = true
-	err := db.Insert("test", data)
+	// dbConn.DebugNext = true
+	err := dbConn.Insert("test", data)
 	if err != nil {
 		t.Error(err)
 	}
@@ -216,7 +216,7 @@ func TestInsertStructPtr(t *testing.T) {
 
 	tr := testRow{B: "foo2"}
 
-	err := db.Insert("test", &tr)
+	err := dbConn.Insert("test", &tr)
 	if err != nil {
 		t.Error(err)
 	}
@@ -228,7 +228,7 @@ func TestInsertStructPtr(t *testing.T) {
 func TestInsertStruct(t *testing.T) {
 
 	tr := testRow{B: "foo3"}
-	err := db.Insert("test", tr)
+	err := dbConn.Insert("test", tr)
 	if err != nil {
 		t.Error(err)
 	}
@@ -250,41 +250,41 @@ func TestTime(t *testing.T) {
 
 	tr := timeStruct{B: &now, C: "timetest"}
 
-	err := db.Insert("test", tr)
+	err := dbConn.Insert("test", tr)
 	if !assert.NoError(t, err) {
 		return
 	}
 
 	// timeStr := timeStruct{}
-	// err = db.Query(&timeStr, "SELECT b FROM test WHERE c='timetest'")
+	// err = dbConn.Query(&timeStr, "SELECT b FROM test WHERE c='timetest'")
 	// if !assert.NoError(t, err) {
 	// 	return
 	// }
 	// assert.Equal(t, now.Format(time.RFC3339Nano), timeStr.B.Format(time.RFC3339Nano))
 
 	// timeStr2 := timeStruct2{}
-	// err = db.Query(&timeStr2, "SELECT b FROM test WHERE c='timetest'")
+	// err = dbConn.Query(&timeStr2, "SELECT b FROM test WHERE c='timetest'")
 	// if !assert.NoError(t, err) {
 	// 	return
 	// }
 	// assert.Equal(t, now.Format(time.RFC3339Nano), timeStr2.B.Format(time.RFC3339Nano))
 
 	time1 := &time.Time{}
-	err = db.Query(&time1, "SELECT b FROM test WHERE c='timetest'")
+	err = dbConn.Query(&time1, "SELECT b FROM test WHERE c='timetest'")
 	if !assert.NoError(t, err) {
 		return
 	}
 	assert.Equal(t, now.Format(time.RFC3339Nano), time1.Format(time.RFC3339Nano))
 
 	time2 := &time.Time{}
-	err = db.Query(&time2, "SELECT b FROM test WHERE c='timetest'")
+	err = dbConn.Query(&time2, "SELECT b FROM test WHERE c='timetest'")
 	if !assert.NoError(t, err) {
 		return
 	}
 	assert.Equal(t, now.Format(time.RFC3339Nano), time2.Format(time.RFC3339Nano))
 
 	time3 := time.Time{}
-	err = db.Query(&time3, "SELECT b FROM test WHERE c='timetest'")
+	err = dbConn.Query(&time3, "SELECT b FROM test WHERE c='timetest'")
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -297,7 +297,7 @@ func TestUpdate(t *testing.T) {
 		A: 1,
 		B: "foo",
 	}
-	err := db.Update("test", tr)
+	err := dbConn.Update("test", tr)
 	if err != nil {
 		t.Error(err)
 	}
@@ -315,7 +315,7 @@ func TestUpdateMany(t *testing.T) {
 		},
 	}
 
-	err := db.Update("test", trs)
+	err := dbConn.Update("test", trs)
 	if err != nil {
 		t.Error(err)
 	}
@@ -332,7 +332,7 @@ func TestSaveMany(t *testing.T) {
 		},
 	}
 
-	err := db.Save("test", trs)
+	err := dbConn.Save("test", trs)
 	if err != nil {
 		t.Error(err)
 	}
@@ -349,13 +349,13 @@ func TestNoPointer(t *testing.T) {
 		}
 	}()
 
-	db.Query(row, "SELECT * FROM test LIMIT 1")
+	dbConn.Query(row, "SELECT * FROM test LIMIT 1")
 }
 
 func TestNoStruct(t *testing.T) {
 	var i int64
 
-	err := db.Query(&i, "SELECT * FROM test ORDER BY a LIMIT 1")
+	err := dbConn.Query(&i, "SELECT * FROM test ORDER BY a LIMIT 1")
 	if err != nil {
 		t.Error(err)
 	}
@@ -367,7 +367,7 @@ func TestNoStruct(t *testing.T) {
 func TestQuery(t *testing.T) {
 
 	row := testRow{}
-	err := db.Query(&row, "SELECT a, b, c, d FROM test ORDER BY a LIMIT 1 OFFSET 1")
+	err := dbConn.Query(&row, "SELECT a, b, c, d FROM test ORDER BY a LIMIT 1 OFFSET 1")
 
 	if err != nil {
 		t.Error(err)
@@ -382,7 +382,7 @@ func TestQuery(t *testing.T) {
 func TestQueryReal(t *testing.T) {
 
 	row := testRow{}
-	err := db.Query(&row, "SELECT a, b, c, d FROM test ORDER BY a LIMIT 1 OFFSET 1")
+	err := dbConn.Query(&row, "SELECT a, b, c, d FROM test ORDER BY a LIMIT 1 OFFSET 1")
 
 	if err != nil {
 		t.Error(err)
@@ -400,12 +400,12 @@ func TestQueryReal(t *testing.T) {
 
 func TestQueryStruct(t *testing.T) {
 	row := testRow{}
-	db.MaxPlaceholder = 1
-	err := db.Query(&row, "SELECT * FROM test WHERE a IN ? LIMIT 1", []int64{1, 2, 3, 4, 5, 6, 7, 8})
+	// dbConn.MaxPlaceholder = 1
+	err := dbConn.Query(&row, "SELECT * FROM test WHERE a IN ? LIMIT 1", []int64{1, 2, 3, 4, 5, 6, 7, 8})
 	if err != nil {
 		t.Error(err)
 	}
-	err = db.Query(&row, "SELECT * FROM test WHERE b IN ? LIMIT 1", []string{"henk", "horst", "torsten"})
+	err = dbConn.Query(&row, "SELECT * FROM test WHERE b IN ? LIMIT 1", []string{"henk", "horst", "torsten"})
 	if err != nil {
 		t.Error(err)
 	}
@@ -420,7 +420,7 @@ func TestQueryStruct2(t *testing.T) {
 	}()
 
 	row := testRow{}
-	db.Query(row, "SELECT * FROM test WHERE A IN ? LIMIT 1", []int64{1, 2, 3, 4, 5, 6, 7, 8})
+	dbConn.Query(row, "SELECT * FROM test WHERE A IN ? LIMIT 1", []int64{1, 2, 3, 4, 5, 6, 7, 8})
 }
 
 func TestStandard(t *testing.T) {
@@ -434,12 +434,12 @@ func TestStandard(t *testing.T) {
 
 	s := jsonStore{"Henk", "Torsten"}
 
-	_, err = db.db.Exec("UPDATE test SET f = ? WHERE a = 2", s)
+	_, err = dbConn.DB().Exec("UPDATE test SET f = ? WHERE a = 2", s)
 	if err != nil {
 		t.Error(err)
 	}
 
-	rows, err := db.db.Query("SELECT b AS b_p, c AS c_p, d AS d_p, f, f FROM test ORDER BY a LIMIT 1 OFFSET 1")
+	rows, err := dbConn.DB().Query("SELECT b AS b_p, c AS c_p, d AS d_p, f, f FROM test ORDER BY a LIMIT 1 OFFSET 1")
 	if err != nil {
 		t.Error(err)
 	}
@@ -465,7 +465,7 @@ func TestQueryPtr(t *testing.T) {
 	s := "henk"
 	row.C_P = &s
 
-	err := db.Query(&row, "SELECT a AS a_p, b AS b_p, c AS c_p, d AS d_p FROM test ORDER BY a LIMIT 1")
+	err := dbConn.Query(&row, "SELECT a AS a_p, b AS b_p, c AS c_p, d AS d_p FROM test ORDER BY a LIMIT 1")
 
 	if err != nil {
 		t.Error(err)
@@ -491,7 +491,7 @@ func TestQueryPtr(t *testing.T) {
 
 func TestQueryAll(t *testing.T) {
 	var rows []testRow
-	err := db.Query(&rows, "SELECT * FROM test")
+	err := dbConn.Query(&rows, "SELECT * FROM test")
 	if err != nil {
 		t.Error(err)
 	}
@@ -502,7 +502,7 @@ func TestQueryAll(t *testing.T) {
 
 func TestQueryAllPtr(t *testing.T) {
 	rows := make([]*testRow, 0)
-	err := db.Query(&rows, "SELECT * FROM test")
+	err := dbConn.Query(&rows, "SELECT * FROM test")
 	if err != nil {
 		t.Error(err)
 	}
@@ -510,7 +510,7 @@ func TestQueryAllPtr(t *testing.T) {
 
 func TestQueryAllInt64(t *testing.T) {
 	rows := make([]int64, 0)
-	err := db.Query(&rows, "SELECT a FROM test")
+	err := dbConn.Query(&rows, "SELECT a FROM test")
 	if err != nil {
 		t.Error(err)
 	}
@@ -518,7 +518,7 @@ func TestQueryAllInt64(t *testing.T) {
 
 func TestQueryAllInt64Ptr(t *testing.T) {
 	rows := make([]*int64, 0)
-	err := db.Query(&rows, "SELECT a FROM test")
+	err := dbConn.Query(&rows, "SELECT a FROM test")
 	if err != nil {
 		t.Error(err)
 	}
@@ -526,7 +526,7 @@ func TestQueryAllInt64Ptr(t *testing.T) {
 
 func TestQueryAllIntPtr(t *testing.T) {
 	rows := make([]*int, 0)
-	err := db.Query(&rows, "SELECT a FROM test")
+	err := dbConn.Query(&rows, "SELECT a FROM test")
 	if err != nil {
 		t.Error(err)
 	}
@@ -534,7 +534,7 @@ func TestQueryAllIntPtr(t *testing.T) {
 }
 func TestQueryAllFloat64Ptr(t *testing.T) {
 	var rows []*float64
-	err := db.Query(&rows, "SELECT d FROM test ORDER BY a")
+	err := dbConn.Query(&rows, "SELECT d FROM test ORDER BY a")
 	if err != nil {
 		t.Error(err)
 	}
@@ -546,7 +546,7 @@ func TestQueryAllFloat64Ptr(t *testing.T) {
 
 func TestCountAll(t *testing.T) {
 	var i *int64
-	err := db.Query(&i, "SELECT count(*) FROM test")
+	err := dbConn.Query(&i, "SELECT count(*) FROM test")
 	if err != nil {
 		t.Error(err)
 	}
@@ -562,14 +562,14 @@ func TestCountUint(t *testing.T) {
 		err error
 	)
 
-	err = db.Query(&i, "SELECT count(*) FROM test")
+	err = dbConn.Query(&i, "SELECT count(*) FROM test")
 	if err != nil {
 		t.Error(err)
 	}
 	if i <= 0 {
 		t.Errorf("count needs to be > 0: %v.", i)
 	}
-	err = db.Query(&i2, "SELECT count(*) FROM test")
+	err = dbConn.Query(&i2, "SELECT count(*) FROM test")
 	if err != nil {
 		t.Error(err)
 	}
@@ -584,7 +584,7 @@ func TestSliceStringPtr(t *testing.T) {
 		err error
 	)
 
-	err = db.Query(&s, "SELECT * FROM test")
+	err = dbConn.Query(&s, "SELECT * FROM test")
 	if err != nil {
 		t.Error(err)
 	}
@@ -599,12 +599,12 @@ func TestSave(t *testing.T) {
 		B: "foo_save",
 	}
 
-	err = db.Save("test", &tr)
+	err = dbConn.Save("test", &tr)
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = db.Save("test", &tr)
+	err = dbConn.Save("test", &tr)
 	if err != nil {
 		t.Error(err)
 	}
@@ -622,7 +622,7 @@ func TestInterfaceSliceSave(t *testing.T) {
 
 	i := []interface{}{tr}
 
-	err = db.Save("test", &i)
+	err = dbConn.Save("test", &i)
 	if err != nil {
 		t.Error(err)
 	}
@@ -640,7 +640,7 @@ func TestInterfaceSlicePtrSave(t *testing.T) {
 
 	i := []interface{}{&tr}
 
-	err = db.Save("test", &i)
+	err = dbConn.Save("test", &i)
 	if err != nil {
 		t.Error(err)
 	}
@@ -653,7 +653,7 @@ func TestSliceString(t *testing.T) {
 		err error
 	)
 
-	err = db.Query(&s, "SELECT * FROM test")
+	err = dbConn.Query(&s, "SELECT * FROM test")
 	if err != nil {
 		t.Error(err)
 	}
@@ -665,7 +665,7 @@ func TestInsertMany(t *testing.T) {
 			B: fmt.Sprintf("row %d", i+1),
 			D: float64(i + 1),
 		}
-		err := db.Insert("test", &tr)
+		err := dbConn.Insert("test", &tr)
 		if err != nil {
 			t.Error(err)
 		}
@@ -682,14 +682,14 @@ func TestInsertBulk(t *testing.T) {
 		rows = append(rows, tr)
 	}
 
-	err := db.InsertBulk("test", rows)
+	err := dbConn.InsertBulk("test", rows)
 	if err != nil {
 		t.Error(err)
 	}
 }
 
 func TestDelete(t *testing.T) {
-	err := db.Exec("DELETE FROM test WHERE a IN ?", []int64{-1, -2, -3})
+	err := dbConn.Exec("DELETE FROM test WHERE a IN ?", []int64{-1, -2, -3})
 	if err != nil {
 		t.Error(err)
 	}
@@ -698,7 +698,7 @@ func TestDelete(t *testing.T) {
 func TestQueryIntStruct(t *testing.T) {
 	var dummy int64
 
-	err := db.Query(&dummy, "SELECT * FROM test WHERE a IN ?", []int64{-1, -2, -3})
+	err := dbConn.Query(&dummy, "SELECT * FROM test WHERE a IN ?", []int64{-1, -2, -3})
 	if err == nil {
 		t.Errorf("Expected ErrQueryReturnedZeroRows.")
 	}
@@ -712,7 +712,7 @@ func TestQueryIntStruct(t *testing.T) {
 func TestQueryIntSlice(t *testing.T) {
 	var dummy []int64
 
-	err := db.Query(&dummy, "SELECT * FROM test WHERE a IN ?", []int64{-1, -2, -3})
+	err := dbConn.Query(&dummy, "SELECT * FROM test WHERE a IN ?", []int64{-1, -2, -3})
 	if err != nil {
 		t.Error(err)
 	}
@@ -728,7 +728,7 @@ func TestQuerySqlRows(t *testing.T) {
 		a    int64
 		idx  int64
 	)
-	err = db.Query(&rows, "SELECT a FROM test")
+	err = dbConn.Query(&rows, "SELECT a FROM test")
 	if err != nil {
 		t.Error(err)
 	}
@@ -769,7 +769,7 @@ func TestQuerySqlRowsNoPtrPtr(t *testing.T) {
 		}
 	}()
 
-	db.Query(rows, "SELECT * FROM test")
+	dbConn.Query(rows, "SELECT * FROM test")
 }
 
 func TestJson(t *testing.T) {
@@ -783,29 +783,29 @@ func TestJson(t *testing.T) {
 	jt := "JsonTest"
 
 	tr = testRowJson{B: jt, F: myStruct{A: "JsonTest", B: "Torsten"}}
-	err = db.Insert("test", &tr)
+	err = dbConn.Insert("test", &tr)
 	if err != nil {
 		t.Error(err)
 	}
 	tr.F.B = "Torsten2"
-	err = db.Update("test", &tr)
+	err = dbConn.Update("test", &tr)
 	if err != nil {
 		t.Error(err)
 	}
 
 	trPtr = testRowJsonPtr{B: &jt, F: &myStruct{A: "JsonTest", B: "Tom"}}
-	err = db.Save("test", &trPtr)
+	err = dbConn.Save("test", &trPtr)
 	if err != nil {
 		t.Error(err)
 	}
 
 	trPtr2 = testRowJsonPtr{B: &jt, F: nil}
-	err = db.Save("test", &trPtr2)
+	err = dbConn.Save("test", &trPtr2)
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = db.Query(&tr2, "SELECT * FROM test WHERE B = ? ORDER BY A", "JsonTest")
+	err = dbConn.Query(&tr2, "SELECT * FROM test WHERE B = ? ORDER BY A", "JsonTest")
 	if err != nil {
 		t.Error(err)
 	}
@@ -819,7 +819,7 @@ func TestJson(t *testing.T) {
 	}
 
 	// pretty.Println(tr2)
-	// db.PrintQuery("SELECT *, F IS NULL FROM test")
+	// dbConn.PrintQuery("SELECT *, F IS NULL FROM test")
 }
 
 func TestUint8(t *testing.T) {
@@ -829,19 +829,19 @@ func TestUint8(t *testing.T) {
 	)
 
 	tr = testRowUint8{F: json.RawMessage([]byte("Torsten"))}
-	err = db.Insert("test", &tr)
+	err = dbConn.Insert("test", &tr)
 	if err != nil {
 		t.Error(err)
 	}
 
 	tr2 = testRowUint8{}
 
-	err = db.Insert("test", &tr2)
+	err = dbConn.Insert("test", &tr2)
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = db.Query(&tr3, "SELECT * FROM test WHERE A=?", tr.A)
+	err = dbConn.Query(&tr3, "SELECT * FROM test WHERE A=?", tr.A)
 	if err != nil {
 		t.Error(err)
 	}
@@ -850,7 +850,7 @@ func TestUint8(t *testing.T) {
 		t.Errorf("Expected %s got %s", string(tr.F), string(tr3.F))
 	}
 
-	err = db.Query(&tr3, "SELECT * FROM test WHERE A=?", tr2.A)
+	err = dbConn.Query(&tr3, "SELECT * FROM test WHERE A=?", tr2.A)
 	if err != nil {
 		t.Error(err)
 	}
@@ -870,19 +870,19 @@ func TestUint8Ptr(t *testing.T) {
 	rm := json.RawMessage([]byte("Torsten"))
 
 	tr = testRowUint8Ptr{F: &rm}
-	err = db.Insert("test", &tr)
+	err = dbConn.Insert("test", &tr)
 	if err != nil {
 		t.Error(err)
 	}
 
 	tr2 = testRowUint8Ptr{}
 
-	err = db.Insert("test", &tr2)
+	err = dbConn.Insert("test", &tr2)
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = db.Query(&tr3, "SELECT * FROM test WHERE A=?", tr.A)
+	err = dbConn.Query(&tr3, "SELECT * FROM test WHERE A=?", tr.A)
 	if err != nil {
 		t.Error(err)
 	}
@@ -891,7 +891,7 @@ func TestUint8Ptr(t *testing.T) {
 		t.Errorf("Expected %s got %s", string(*tr.F), string(*tr3.F))
 	}
 
-	err = db.Query(&tr3, "SELECT * FROM test WHERE A=?", tr2.A)
+	err = dbConn.Query(&tr3, "SELECT * FROM test WHERE A=?", tr2.A)
 	if err != nil {
 		t.Error(err)
 	}
@@ -914,7 +914,7 @@ type ifcArr []interface{}
 
 func TestReplaceArgs(t *testing.T) {
 
-	db2 := New(db.db)
+	db2 := newSqlPro(dbConn.DB())
 
 	int_args := []int64{1, 3, 4, 5}
 	string_args := []string{"a", "b", "c"}
@@ -972,7 +972,7 @@ func TestReplaceArgs(t *testing.T) {
 
 }
 
-func runPlaceholderTests(t *testing.T, db *DB, phTests []phTest) {
+func runPlaceholderTests(t *testing.T, db *db, phTests []phTest) {
 	var (
 		sqlS    string
 		err     error
@@ -1054,7 +1054,7 @@ func TestEmbed(t *testing.T) {
 		},
 		D: "D",
 	}
-	err := db.Save("test", &tr)
+	err := dbConn.Save("test", &tr)
 	if !assert.NoError(t, err) {
 		return
 	}

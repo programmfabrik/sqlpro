@@ -276,7 +276,7 @@ func getStructInfo(t reflect.Type) structInfo {
 
 // replaceArgs rewrites the string sqlS to embed the slice args given
 // it returns the new placeholder string and the reduced list of arguments.
-func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface{}, error) {
+func (db2 *db) replaceArgs(sqlS string, args ...interface{}) (string, []interface{}, error) {
 	var (
 		nthArg, lenRunes int
 		newArgs          []interface{}
@@ -319,7 +319,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 			continue
 		}
 
-		if currRune != db.PlaceholderKey && currRune != db.PlaceholderValue {
+		if currRune != db2.PlaceholderKey && currRune != db2.PlaceholderValue {
 			sb.WriteRune(currRune)
 			continue
 		}
@@ -332,12 +332,12 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		nthArg++
 
 		// replace column and table names ("Key")
-		if currRune == db.PlaceholderKey {
+		if currRune == db2.PlaceholderKey {
 			switch v := arg.(type) {
 			case *string:
-				sb.WriteString(db.Esc(*v))
+				sb.WriteString(db2.Esc(*v))
 			case string:
-				sb.WriteString(db.Esc(v))
+				sb.WriteString(db2.Esc(v))
 			default:
 				return "", nil, fmt.Errorf("replaceArgs: Unable to replace %s with type %T, need *string or string.", string(currRune), arg)
 			}
@@ -352,7 +352,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 
 		if isValue || driver.IsValue(arg) {
 			newArgs = append(newArgs, arg)
-			db.appendPlaceholder(&sb, len(newArgs)-1)
+			db2.appendPlaceholder(&sb, len(newArgs)-1)
 			continue
 		}
 
@@ -369,16 +369,16 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 					sb.WriteRune(',')
 				}
 				item := rv.Index(i).Interface()
-				if l > db.MaxPlaceholder {
+				if l > db2.MaxPlaceholder {
 					// append literals
 					switch v := item.(type) {
 					case string:
-						sb.WriteString(db.EscValue(v))
+						sb.WriteString(db2.EscValue(v))
 					case *string:
 						if v == nil {
 							sb.WriteString("null")
 						} else {
-							sb.WriteString(db.EscValue(*v))
+							sb.WriteString(db2.EscValue(*v))
 						}
 					case int:
 						sb.WriteString(strconv.FormatInt(int64(v), 10))
@@ -408,8 +408,8 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 						return "", nil, errors.Errorf("Unable to add type: %T in slice placeholder. Can only add string, *string, int, int32, int64, *int, *int32  and *int64", item)
 					}
 				} else {
-					newArgs = append(newArgs, db.nullValue(item, fi))
-					db.appendPlaceholder(&sb, len(newArgs)-1)
+					newArgs = append(newArgs, db2.nullValue(item, fi))
+					db2.appendPlaceholder(&sb, len(newArgs)-1)
 				}
 			}
 			sb.WriteRune(')')
@@ -418,7 +418,7 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 		}
 
 		newArgs = append(newArgs, arg)
-		db.appendPlaceholder(&sb, len(newArgs)-1)
+		db2.appendPlaceholder(&sb, len(newArgs)-1)
 	}
 
 	// append left over args
@@ -432,8 +432,8 @@ func (db *DB) replaceArgs(sqlS string, args ...interface{}) (string, []interface
 }
 
 // appendPlaceholder adds one placeholder to the built
-func (db *DB) appendPlaceholder(sb *strings.Builder, numArg int) {
-	switch db.PlaceholderMode {
+func (db2 *db) appendPlaceholder(sb *strings.Builder, numArg int) {
+	switch db2.PlaceholderMode {
 	case QUESTION:
 		sb.WriteRune('?')
 	case DOLLAR:
@@ -442,73 +442,128 @@ func (db *DB) appendPlaceholder(sb *strings.Builder, numArg int) {
 	}
 }
 
-func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
-	var s string
-
-	v0 := db.nullValue(value, fi)
-	if v0 == nil {
-		return "NULL"
-	}
-	switch v := v0.(type) {
-	case int:
-		return strconv.FormatInt(int64(v), 10)
-	case *int:
-		return strconv.FormatInt(int64(*v), 10)
-	case int8:
-		return strconv.FormatInt(int64(v), 10)
-	case *int8:
-		return strconv.FormatInt(int64(*v), 10)
-	case int16:
-		return strconv.FormatInt(int64(v), 10)
-	case *int16:
-		return strconv.FormatInt(int64(*v), 10)
-	case int32:
-		return strconv.FormatInt(int64(v), 10)
-	case *int32:
-		return strconv.FormatInt(int64(*v), 10)
-	case int64:
-		return strconv.FormatInt(v, 10)
-	case *int64:
-		return strconv.FormatInt(*v, 10)
-	case uint:
-		return strconv.FormatInt(int64(v), 10)
-	case *uint:
-		return strconv.FormatInt(int64(*v), 10)
-	case uint8:
-		return strconv.FormatInt(int64(v), 10)
-	case *uint8:
-		return strconv.FormatInt(int64(*v), 10)
-	case uint16:
-		return strconv.FormatInt(int64(v), 10)
-	case *uint16:
-		return strconv.FormatInt(int64(*v), 10)
-	case uint32:
-		return strconv.FormatInt(int64(v), 10)
-	case *uint32:
-		return strconv.FormatInt(int64(*v), 10)
-	case uint64:
-		return strconv.FormatInt(int64(v), 10)
-	case *uint64:
-		return strconv.FormatInt(int64(*v), 10)
+func (db2 *db) EscValueForInsert(value any, fi *fieldInfo) string {
+	vIn := db2.valueForInsert(value, fi)
+	switch v := vIn.(type) {
+	case string:
+		return db2.EscValue(v)
 	case float32:
 		return strconv.FormatFloat(float64(v), 'f', -1, 32)
-	case *float32:
-		return strconv.FormatFloat(float64(*v), 'f', -1, 32)
 	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64)
+		return strconv.FormatFloat(float64(v), 'f', -1, 64)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case time.Time:
+		return db2.EscValue(v.Format(time.RFC3339Nano))
+	case bool:
+		if v {
+			return "TRUE"
+		} else {
+			return "FALSE"
+		}
+	case nil:
+		return "NULL"
+	default:
+		panic(fmt.Sprintf("unknown type %T", v))
+	}
+}
+func toTime(v any) (time.Time, bool) {
+	rv := reflect.ValueOf(v)
+	rt := rv.Type()
+	timeType := reflect.TypeOf(time.Time{})
+
+	// Dereference pointer
+	if rt.Kind() == reflect.Ptr {
+		if rv.IsNil() {
+			return time.Time{}, false
+		}
+		rv = rv.Elem()
+		rt = rv.Type()
+	}
+
+	// Direct match
+	if rt == timeType {
+		return rv.Interface().(time.Time), true
+	}
+
+	// Convertible types (e.g. SimpleTime)
+	if rt.ConvertibleTo(timeType) {
+		converted := rv.Convert(timeType) // reflect.Value → time.Time
+		return converted.Interface().(time.Time), true
+	}
+
+	return time.Time{}, false
+}
+
+// valueForInsert returns string, int64, float32, float64, bool or nil
+func (db2 *db) valueForInsert(value any, fi *fieldInfo) any {
+	var s string
+
+	v0 := db2.nullValue(value, fi)
+	if v0 == nil {
+		return nil
+	}
+
+	switch v := v0.(type) {
+	case int:
+		return int64(v)
+	case *int:
+		return int64(*v)
+	case int8:
+		return int64(v)
+	case *int8:
+		return int64(*v)
+	case int16:
+		return int64(v)
+	case *int16:
+		return int64(*v)
+	case int32:
+		return int64(v)
+	case *int32:
+		return int64(*v)
+	case int64:
+		return v
+	case *int64:
+		return *v
+	case uint:
+		return int64(v)
+	case *uint:
+		return int64(*v)
+	case uint8:
+		return int64(v)
+	case *uint8:
+		return int64(*v)
+	case uint16:
+		return int64(v)
+	case *uint16:
+		return int64(*v)
+	case uint32:
+		return int64(v)
+	case *uint32:
+		return int64(*v)
+	case uint64:
+		return int64(v)
+	case *uint64:
+		return int64(*v)
+	case float32:
+		return v
+	case *float32:
+		return *v
+	case float64:
+		return v
 	case *float64:
-		return strconv.FormatFloat(*v, 'f', -1, 64)
+		return *v
 	case bool:
 		if v == false {
-			return "FALSE"
+			return false
 		} else {
-			return "TRUE"
+			return true
 		}
 	case *bool:
 		if *v == false {
-			return "FALSE"
+			return false
 		} else {
-			return "TRUE"
+			return true
 		}
 	case []uint8:
 		s = string(v)
@@ -519,14 +574,18 @@ func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
 	case *string:
 		s = *v
 	case time.Time:
-		s = v.Format(time.RFC3339Nano)
+		return v
 	case *time.Time:
-		s = v.Format(time.RFC3339Nano)
+		return *v
 	default:
+		t, isTime := toTime(v0)
+		if isTime {
+			return t
+		}
 		vr, ok := value.(driver.Valuer)
 		if ok {
 			v2, _ := vr.Value()
-			return db.EscValueForInsert(v2, fi)
+			return db2.valueForInsert(v2, fi)
 		}
 		sv := reflect.ValueOf(value)
 		// try to use a pointer to check if the driver.Valuer is satisfied
@@ -537,23 +596,23 @@ func (db *DB) EscValueForInsert(value interface{}, fi *fieldInfo) string {
 			vr2, ok2 := anyVal.(driver.Valuer)
 			if ok2 {
 				v3, _ := vr2.Value()
-				return db.EscValueForInsert(v3, fi)
+				return db2.valueForInsert(v3, fi)
 			}
 		}
 		switch sv.Kind() {
 		case reflect.Int:
-			return strconv.FormatInt(sv.Int(), 10)
+			return sv.Int()
 		case reflect.String:
 			s = sv.String()
 		default:
 			panic(fmt.Sprintf("EscValueForInsert failed: %T value %v in type: %s", value, value, sv.Kind()))
 		}
 	}
-	return db.EscValue(s)
+	return s
 }
 
 // nullValue returns the escaped value suitable for UPDATE & INSERT
-func (db *DB) nullValue(value interface{}, fi *fieldInfo) interface{} {
+func (db2 *db) nullValue(value interface{}, fi *fieldInfo) interface{} {
 
 	if isZero(value) {
 		if fi.allowNull() {
@@ -607,28 +666,28 @@ func argsToString(args ...interface{}) string {
 	return sb.String()
 }
 
-func (db *DB) Close() error {
-	if db.sqlDB == nil {
+func (db2 *db) Close() error {
+	if db2.sqlDB == nil {
 		panic("sqlpro.DB.Close: Unable to close, use Open to initialize the wrapper")
 	}
-	if db.sqlTx != nil {
+	if db2.sqlTx != nil {
 		panic("sqlpro.TX.Close: Unable to close a tx handle")
 	}
-	db.isClosed = true
+	db2.isClosed = true
 
 	// log.Printf("%s sqlpro.Close: %s", db, db.DSN)
-	return db.sqlDB.Close()
+	return db2.sqlDB.Close()
 }
 
-func (db *DB) IsClosed() bool {
-	if db == nil {
+func (db2 *db) IsClosed() bool {
+	if db2 == nil {
 		return true
 	}
-	return db.isClosed
+	return db2.isClosed
 }
 
 // Open opens a database connection and returns an sqlpro wrap handle
-func Open(driverS, dsn string) (*DB, error) {
+func Open(driverS, dsn string) (DB, error) {
 
 	var driver dbDriver
 	var driverName string
@@ -657,10 +716,10 @@ func Open(driverS, dsn string) (*DB, error) {
 		return nil, err
 	}
 
-	wrapper := New(conn)
+	wrapper := newSqlPro(conn)
 
 	wrapper.sqlDB = conn
-	wrapper.Driver = driver
+	wrapper.driver = driver
 
 	// wrapper.Debug = true
 
@@ -675,7 +734,6 @@ func Open(driverS, dsn string) (*DB, error) {
 	default:
 		return nil, errors.Errorf("sqlpro.Open: Unsupported driver '%s'.", driver)
 	}
-
 	return wrapper, nil
 }
 

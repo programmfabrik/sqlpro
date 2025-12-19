@@ -3,26 +3,28 @@ package sqlpro
 import (
 	"context"
 	"database/sql"
+
+	"fmt"
 	"log"
 	"sync"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
-// txBegin starts a new transaction, this panics if
-// the wrapper was not initialized using "Open"
-// it gets passed a flag which states if there will be any writes
-func (db *DB) txBeginContext(ctx context.Context, topts *sql.TxOptions) (*DB, error) {
-	var (
-		err error
-	)
+// txBeginContext starts a new transaction, this panics if the wrapper was not
+// initialized using "Open" it gets passed a flag which states if there will be
+// any writes.
+func (db3 *db) txBeginContext(ctx context.Context, conn *sql.Conn, topts *sql.TxOptions) (dbPtr *db, err error) {
 
-	if db.sqlDB == nil {
+	if db3.sqlDB == nil {
 		panic("sqlpro.DB.Begin: The wrapper must be created using Open. The wrapper does not have access to the underlying sql.DB handle.")
 	}
-	if db.sqlTx != nil {
+	if db3.sqlTx != nil {
 		panic("sqlpro.DB.Begin: Unable to call Begin on a Transaction.")
 	}
 
-	db2 := *db
+	db2 := *db3
 	db2.txExecQueryMtx = &sync.Mutex{}
 
 	wMode := topts == nil || !topts.ReadOnly
@@ -31,13 +33,22 @@ func (db *DB) txBeginContext(ctx context.Context, topts *sql.TxOptions) (*DB, er
 	// as immediate so it gets a lock Not implemented in driver, therefore this
 	// raw SQL workaround Lock, so we can safely do the sqlite3 ROLLBACK / BEGIN
 	// below
-	if wMode && db.Driver == SQLITE3 {
+	if wMode && db3.driver == SQLITE3 {
 		db2.txBeginMtx.Lock()
 	}
 
-	db2.sqlTx, err = db.sqlDB.BeginTx(ctx, topts)
+	if conn != nil {
+		db2.sqlTx, err = conn.BeginTx(ctx, topts)
+	} else {
+		db2.sqlTx, err = db3.sqlDB.BeginTx(ctx, topts)
+	}
 	if err != nil {
-		if wMode && db.Driver == SQLITE3 {
+		return nil, err
+	}
+	db2.db = db2.sqlTx
+
+	if err != nil {
+		if wMode && db3.driver == SQLITE3 {
 			db2.txBeginMtx.Unlock()
 		}
 		return nil, err
@@ -46,8 +57,8 @@ func (db *DB) txBeginContext(ctx context.Context, topts *sql.TxOptions) (*DB, er
 	// Set flag so we know if to allow write operations
 	db2.txWriteMode = wMode
 
-	if wMode && db.Driver == SQLITE3 {
-		_, err = db2.sqlTx.ExecContext(ctx, "ROLLBACK; BEGIN IMMEDIATE")
+	if wMode && db3.driver == SQLITE3 {
+		_, err = db2.db.ExecContext(ctx, "ROLLBACK; BEGIN IMMEDIATE")
 		if err != nil {
 			db2.txBeginMtx.Unlock()
 			return nil, err
@@ -55,41 +66,57 @@ func (db *DB) txBeginContext(ctx context.Context, topts *sql.TxOptions) (*DB, er
 		db2.txBeginMtx.Unlock()
 	}
 
-	db2.db = db2.sqlTx
-
 	// debug.PrintStack()
 
 	// pflib.Pln("[%p] BEGIN #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
 
-	if db.DebugExec || db.Debug {
-		log.Printf("%s BEGIN: %s sql.DB: %p", db, &db2, db.sqlDB)
+	if db3.DebugExec || db3.Debug {
+		log.Printf("%s BEGIN: %s sql.DB: %p", db3, &db2, db3.sqlDB)
 	}
 
 	return &db2, nil
 }
 
+func (db2 *db) pgxConn() *pgx.Conn {
+	if db2.driver != POSTGRES {
+		return nil
+	}
+	if db2.driverConn == nil {
+		return nil
+	}
+	stdConn, ok := db2.driverConn.(*stdlib.Conn)
+	if !ok {
+		panic(fmt.Errorf("CopyFrom: need PGX driver, but have %T", stdConn))
+	}
+	return stdConn.Conn()
+}
+
 // Begin starts a new transaction, (read-write mode)
-func (db *DB) Begin() (*DB, error) {
-	return db.txBeginContext(context.Background(), nil)
+func (db2 *db) Begin() (TX, error) {
+	return db2.txBeginContext(context.Background(), nil, nil)
+}
+
+func (db2 *db) Driver() dbDriver {
+	return db2.driver
 }
 
 // BeginRead starts a new transaction, read-only mode
-func (db *DB) BeginRead() (*DB, error) {
-	return db.txBeginContext(context.Background(), &sql.TxOptions{ReadOnly: true})
+func (db2 *db) BeginRead() (TX, error) {
+	return db2.txBeginContext(context.Background(), nil, &sql.TxOptions{ReadOnly: true})
 }
 
 // Begin starts a new transaction, (read-write mode)
-func (db *DB) BeginContext(ctx context.Context, opts *sql.TxOptions) (*DB, error) {
-	return db.txBeginContext(ctx, opts)
+func (db2 *db) BeginContext(ctx context.Context, opts *sql.TxOptions) (TX, error) {
+	return db2.txBeginContext(ctx, nil, opts)
 }
 
-func (db *DB) Commit() error {
-	if db.sqlTx == nil {
+func (db2 *db) Commit() error {
+	if db2.sqlTx == nil {
 		panic("sqlpro.DB.Commit: Unable to call Commit without Transaction.")
 	}
 
-	if db.DebugExec || db.Debug {
-		log.Printf("%s COMMIT sql.DB: %p", db, db.sqlDB)
+	if db2.DebugExec || db2.Debug {
+		log.Printf("%s COMMIT sql.DB: %p", db2, db2.sqlDB)
 	}
 
 	// pflib.Pln("[%p] COMMIT #%d %s", db.sqlDB, db.transID, aurora.Blue(fmt.Sprintf("%p", db.sqlTx)))
@@ -98,27 +125,27 @@ func (db *DB) Commit() error {
 	// 	log.Printf("COMMIT WRITE #%d took %s", db.transID, time.Since(db.txStart))
 	// }
 
-	err := db.sqlTx.Commit()
-	db.sqlTx = nil
+	err := db2.sqlTx.Commit()
+	db2.sqlTx = nil
 
 	if err != nil {
 		return err
 	}
 
-	for _, f := range db.txAfterCommit {
+	for _, f := range db2.txAfterCommit {
 		f()
 	}
 
 	return nil
 }
 
-func (db *DB) Rollback() error {
-	if db.sqlTx == nil {
+func (db2 *db) Rollback() error {
+	if db2.sqlTx == nil {
 		panic("sqlpro.DB.Rollback: Unable to call Rollback without Transaction.")
 	}
 
-	if db.DebugExec || db.Debug {
-		log.Printf("%s ROLLBACK", db)
+	if db2.DebugExec || db2.Debug {
+		log.Printf("%s ROLLBACK", db2)
 	}
 
 	// debug.PrintStack()
@@ -128,49 +155,49 @@ func (db *DB) Rollback() error {
 	// 	log.Printf("ROLLBACK WRITE #%d took %s", db.transID, time.Since(db.txStart))
 	// }
 
-	err := db.sqlTx.Rollback()
-	db.sqlTx = nil
+	err := db2.sqlTx.Rollback()
+	db2.sqlTx = nil
 
 	if err != nil {
 		return err
 	}
 
-	for _, f := range db.txAfterRollback {
+	for _, f := range db2.txAfterRollback {
 		f()
 	}
 
 	return nil
 }
 
-func (db *DB) ActiveTX() bool {
-	if db == nil {
+func (db2 *db) ActiveTX() bool {
+	if db2 == nil {
 		return false
 	}
-	return db.sqlTx != nil
+	return db2.sqlTx != nil
 }
 
-func (db *DB) AfterTransaction(f func()) {
-	if db.sqlTx == nil {
+func (db2 *db) AfterTransaction(f func()) {
+	if db2.sqlTx == nil {
 		panic("sqlpro.DB.AfterTransaction: Needs Transaction.")
 	}
-	db.AfterCommit(f)
-	db.AfterRollback(f)
+	db2.AfterCommit(f)
+	db2.AfterRollback(f)
 }
 
-func (db *DB) AfterCommit(f func()) {
-	if db.sqlTx == nil {
+func (db2 *db) AfterCommit(f func()) {
+	if db2.sqlTx == nil {
 		panic("sqlpro.DB.AfterCommit: Needs Transaction.")
 	}
-	db.txAfterCommit = append(db.txAfterCommit, f)
+	db2.txAfterCommit = append(db2.txAfterCommit, f)
 }
 
-func (db *DB) AfterRollback(f func()) {
-	if db.sqlTx == nil {
+func (db2 *db) AfterRollback(f func()) {
+	if db2.sqlTx == nil {
 		panic("sqlpro.DB.AfterRollback: Needs Transaction.")
 	}
-	db.txAfterRollback = append(db.txAfterRollback, f)
+	db2.txAfterRollback = append(db2.txAfterRollback, f)
 }
 
-func (db *DB) IsWriteMode() bool {
-	return db.txWriteMode
+func (db2 *db) IsWriteMode() bool {
+	return db2.txWriteMode
 }

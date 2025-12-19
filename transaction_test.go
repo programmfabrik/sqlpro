@@ -13,7 +13,7 @@ import (
 func FailsWithREADMutexTestConcurrency(t *testing.T) {
 	var err error
 
-	db1, err := db.Begin()
+	db1, err := dbConn.Begin()
 	if err != nil {
 		t.Error(err)
 		return
@@ -26,7 +26,7 @@ func FailsWithREADMutexTestConcurrency(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			db2, err := db.Begin()
+			db2, err := dbConn.Begin()
 			if err != nil {
 				t.Error(errors.Wrap(err, "BEGIN failed"))
 				return
@@ -59,12 +59,12 @@ func FailsWithREADMutexTestConcurrency(t *testing.T) {
 
 }
 
-func readRow(db *DB) error {
+func readRow(db2 Query) error {
 	rows := []*testRow{}
-	return db.Query(&rows, "SELECT * FROM test LIMIT 1")
+	return db2.Query(&rows, "SELECT * FROM test LIMIT 1")
 }
 
-func saveRow(db *DB, i int) error {
+func saveRow(db2 Exec, i int) error {
 	data := []*testRow{
 		{
 			B: "concurrency",
@@ -72,7 +72,7 @@ func saveRow(db *DB, i int) error {
 			F: jsonStore{"Yo", "Mama"},
 		},
 	}
-	return db.Insert("test", data)
+	return db2.Insert("test", data)
 }
 
 func TestConcurrency(t *testing.T) {
@@ -83,7 +83,7 @@ func TestConcurrency(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 
-			db2, err := db.Begin()
+			db2, err := dbConn.Begin()
 			if err != nil {
 				t.Error(err)
 				return
@@ -113,7 +113,7 @@ func TestConcurrency(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 
-			db2, err := db.BeginRead()
+			db2, err := dbConn.BeginRead()
 			if err != nil {
 				t.Error(err)
 				return
@@ -136,7 +136,7 @@ func TestConcurrency(t *testing.T) {
 
 func TestReadOnlyMode(t *testing.T) {
 
-	db2, err := db.BeginRead()
+	db2, err := dbConn.BeginRead()
 	if err != nil {
 		t.Error(err)
 		return
@@ -166,7 +166,7 @@ func TestReadOnlyMode(t *testing.T) {
 
 func TestTwoConnections(t *testing.T) {
 
-	db2, err := db.BeginRead()
+	db2, err := dbConn.BeginRead()
 	if err != nil {
 		t.Error(err)
 		return
@@ -177,7 +177,7 @@ func TestTwoConnections(t *testing.T) {
 
 	go func() {
 		println("Getting TX")
-		db3, err := db.Begin()
+		db3, err := dbConn.Begin()
 		if err != nil {
 			db3.Rollback()
 		} else {
