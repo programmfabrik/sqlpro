@@ -65,7 +65,7 @@ func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, 
 		}
 	}()
 
-	// Capture the driverConn. This is discouraged in the documnetation of
+	// Capture the driverConn. This is discouraged in the documentation of
 	// "Raw", but there is no other way to do what we need here. We need to have
 	// the original driver connection while still be able to start a sql package
 	// transaction. Since the sqlpro package knows that the connection is not
@@ -92,7 +92,7 @@ func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, 
 	if tx.IsWriteMode() {
 		switch tx.Driver() {
 		case POSTGRES:
-			err = tx.ExecContext(ctx, `SET LOCAL lock_timeout = '60s'`)
+			err = tx.ExecContext(ctx, `SET LOCAL lock_timeout = '300s'`)
 			if err != nil {
 				return rollback(tx, fmt.Errorf("sqlpro.ExecTX: %w", err))
 			}
@@ -109,11 +109,6 @@ func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, 
 	} else {
 		return commit(tx)
 	}
-	// })
-	// if err != nil {
-	// 	return err
-	// }
-	return nil
 }
 
 func rollback(tx TX, err error) error {
