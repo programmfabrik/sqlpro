@@ -36,23 +36,18 @@ func (db3 *db) txBeginContext(ctx context.Context, conn *sql.Conn, topts *sql.Tx
 	if wMode && db3.driver == SQLITE3 {
 		db2.txBeginMtx.Lock()
 	}
-
 	if conn != nil {
 		db2.sqlTx, err = conn.BeginTx(ctx, topts)
 	} else {
 		db2.sqlTx, err = db3.sqlDB.BeginTx(ctx, topts)
 	}
 	if err != nil {
-		return nil, err
-	}
-	db2.db = db2.sqlTx
-
-	if err != nil {
 		if wMode && db3.driver == SQLITE3 {
 			db2.txBeginMtx.Unlock()
 		}
 		return nil, err
 	}
+	db2.db = db2.sqlTx
 
 	// Set flag so we know if to allow write operations
 	db2.txWriteMode = wMode

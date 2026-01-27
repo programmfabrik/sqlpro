@@ -83,9 +83,9 @@ const (
 )
 
 type dbWrappable interface {
-	Query(query string, args ...interface{}) (*sql.Rows, error)
+	Query(query string, args ...any) (*sql.Rows, error)
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-	Exec(query string, args ...interface{}) (sql.Result, error)
+	Exec(query string, args ...any) (sql.Result, error)
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
@@ -241,18 +241,18 @@ func (db2 *db) Log() DB {
 	return &newDB
 }
 
-func (db2 *db) Query(target interface{}, query string, args ...interface{}) error {
+func (db2 *db) Query(target any, query string, args ...any) error {
 	return db2.QueryContext(context.Background(), target, query, args...)
 }
 
 // QueryContext runs a query and fills the received rows or row into the target.
 // It is a wrapper method around the
-func (db2 *db) QueryContext(ctx context.Context, target interface{}, query string, args ...interface{}) error {
+func (db2 *db) QueryContext(ctx context.Context, target any, query string, args ...any) error {
 	var (
 		rows    *sql.Rows
 		err     error
 		query0  string
-		newArgs []interface{}
+		newArgs []any
 	)
 
 	if db2.txExecQueryMtx != nil {
@@ -295,11 +295,11 @@ func (db2 *db) QueryContext(ctx context.Context, target interface{}, query strin
 	return nil
 }
 
-func (db2 *db) Exec(execSql string, args ...interface{}) error {
+func (db2 *db) Exec(execSql string, args ...any) error {
 	return db2.ExecContext(context.Background(), execSql, args...)
 }
 
-func (db2 *db) ExecContext(ctx context.Context, execSql string, args ...interface{}) error {
+func (db2 *db) ExecContext(ctx context.Context, execSql string, args ...any) error {
 	if execSql == "" {
 		return db2.debugError(errors.New("Exec: Empty query"))
 	}
@@ -309,19 +309,19 @@ func (db2 *db) ExecContext(ctx context.Context, execSql string, args ...interfac
 
 // ExecContextExp executes execSql in context ctx. If the number of rows affected
 // doesn't match expRows, an error is returned.
-func (db2 *db) ExecContextRowsAffected(ctx context.Context, execSql string, args ...interface{}) (rowsAffected int64, insertID int64, err error) {
+func (db2 *db) ExecContextRowsAffected(ctx context.Context, execSql string, args ...any) (rowsAffected int64, insertID int64, err error) {
 	if execSql == "" {
 		return 0, 0, db2.debugError(errors.New("Exec: Empty query"))
 	}
 	return db2.execContext(ctx, execSql, args...)
 }
 
-func (db2 *db) PrintQueryContext(ctx context.Context, query string, args ...interface{}) error {
+func (db2 *db) PrintQueryContext(ctx context.Context, query string, args ...any) error {
 	var (
 		rows    *sql.Rows
 		err     error
 		query0  string
-		newArgs []interface{}
+		newArgs []any
 	)
 
 	data := make([][]string, 0)
@@ -365,11 +365,11 @@ func (db2 *db) debugError(err error) error {
 	return err
 }
 
-func (db2 *db) sqlError(err error, sqlS string, args []interface{}) error {
+func (db2 *db) sqlError(err error, sqlS string, args []any) error {
 	return errors.Wrapf(err, "Database Error: %s", db2.sqlDebug(sqlS, args))
 }
 
-func (db2 *db) sqlDebug(sqlS string, args []interface{}) string {
+func (db2 *db) sqlDebug(sqlS string, args []any) string {
 	// if len(sqlS) > 1000 {
 	// 	return fmt.Sprintf("SQL:\n %s \nARGS:\n%v\n", sqlS[0:1000], argsToString(args...))
 	// }

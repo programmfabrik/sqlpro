@@ -59,7 +59,7 @@ type NullTime struct {
 }
 
 // Scan implements the Scanner interface.
-func (ni *NullTime) Scan(value interface{}) error {
+func (ni *NullTime) Scan(value any) error {
 	// log.Printf("Scan %T %s", value, value)
 	if value == nil {
 		ni.Time, ni.Valid = time.Time{}, false
@@ -89,7 +89,7 @@ type NullJson struct {
 	Valid bool
 }
 
-func (nj *NullJson) Scan(value interface{}) error {
+func (nj *NullJson) Scan(value any) error {
 	switch v := value.(type) {
 	case nil:
 		return nil
@@ -117,7 +117,7 @@ type NullRawMessage struct {
 	Valid bool
 }
 
-func (nj *NullRawMessage) Scan(value interface{}) error {
+func (nj *NullRawMessage) Scan(value any) error {
 	switch v := value.(type) {
 	case nil:
 		return nil
@@ -276,10 +276,10 @@ func getStructInfo(t reflect.Type) structInfo {
 
 // replaceArgs rewrites the string sqlS to embed the slice args given
 // it returns the new placeholder string and the reduced list of arguments.
-func (db2 *db) replaceArgs(sqlS string, args ...interface{}) (string, []interface{}, error) {
+func (db2 *db) replaceArgs(sqlS string, args ...any) (string, []any, error) {
 	var (
 		nthArg, lenRunes int
-		newArgs          []interface{}
+		newArgs          []any
 		sb               strings.Builder
 		runes            []rune
 		currRune         rune
@@ -592,7 +592,7 @@ func (db2 *db) valueForInsert(value any, fi *fieldInfo) any {
 		if sv.Kind() != reflect.Pointer {
 			pv := reflect.New(sv.Type())
 			pv.Elem().Set(sv)
-			var anyVal interface{} = pv.Interface()
+			var anyVal any = pv.Interface()
 			vr2, ok2 := anyVal.(driver.Valuer)
 			if ok2 {
 				v3, _ := vr2.Value()
@@ -612,7 +612,7 @@ func (db2 *db) valueForInsert(value any, fi *fieldInfo) any {
 }
 
 // nullValue returns the escaped value suitable for UPDATE & INSERT
-func (db2 *db) nullValue(value interface{}, fi *fieldInfo) interface{} {
+func (db2 *db) nullValue(value any, fi *fieldInfo) any {
 
 	if isZero(value) {
 		if fi.allowNull() {
@@ -628,12 +628,12 @@ func (db2 *db) nullValue(value interface{}, fi *fieldInfo) interface{} {
 }
 
 // argsToString builds a debug string from given args
-func argsToString(args ...interface{}) string {
+func argsToString(args ...any) string {
 	var (
 		s        string
 		sb       strings.Builder
 		rv       reflect.Value
-		argPrint interface{}
+		argPrint any
 	)
 	if len(args) == 0 {
 		return " <none>"

@@ -13,8 +13,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/pkg/errors"
-	"github.com/programmfabrik/golib"
-	"github.com/yudai/pp"
 )
 
 // checkData checks that the given data is either one of:
@@ -27,7 +25,7 @@ import (
 //
 // For structs the function returns true, nil, for slices false, nil
 
-func checkData(data interface{}) (rv reflect.Value, structMode bool, err error) {
+func checkData(data any) (rv reflect.Value, structMode bool, err error) {
 	erro := func() (reflect.Value, bool, error) {
 		return rv, false, fmt.Errorf("Insert/Update needs a struct or slice of structs.")
 	}
@@ -72,7 +70,7 @@ func (db2 *db) Insert(table string, data any) error {
 // result.LastInsertId will be used to set the first primary
 // key column.
 
-func (db2 *db) InsertContext(ctx context.Context, table string, data interface{}) error {
+func (db2 *db) InsertContext(ctx context.Context, table string, data any) error {
 	var (
 		rv         reflect.Value
 		structMode bool
@@ -144,7 +142,7 @@ func setPrimaryKey(rv reflect.Value, id int64) {
 	}
 }
 
-func (db2 *db) InsertBulk(table string, data interface{}) error {
+func (db2 *db) InsertBulk(table string, data any) error {
 	return db2.InsertBulkContext(context.Background(), table, data)
 }
 
@@ -158,13 +156,13 @@ func (db2 *db) InsertBulk(table string, data interface{}) error {
 // []struct
 //
 // sqlpro will executes one INSERT statement per call.
-func (db2 *db) InsertBulkContext(ctx context.Context, table string, data interface{}) error {
+func (db2 *db) InsertBulkContext(ctx context.Context, table string, data any) error {
 	return db2.insertBulkContext(ctx, table, data, false, nil)
 }
 
 // InsertBulkOnConflictDoNothingContext works like InsertBulkContext but adds a
 // "ON CONFLICT DO NOTHING" to the insert command.
-func (db2 *db) InsertBulkOnConflictDoNothingContext(ctx context.Context, table string, data interface{}, cols ...string) error {
+func (db2 *db) InsertBulkOnConflictDoNothingContext(ctx context.Context, table string, data any, cols ...string) error {
 	return db2.insertBulkContext(ctx, table, data, true, cols)
 }
 
@@ -226,7 +224,7 @@ func (db2 *db) copyFrom(ctx context.Context, table string, data *copyFromData) e
 	if err != nil {
 		return err
 	}
-	if err == nil && rowsAffected != data.Len() {
+	if rowsAffected != data.Len() {
 		err = ErrMismatchedRowsAffected
 	}
 	return nil
@@ -323,20 +321,20 @@ func (db2 *db) insertBulkContext(ctx context.Context, table string, data any, on
 		err = ErrMismatchedRowsAffected
 	}
 	if err != nil {
-		return db2.sqlError(err, insert.String(), []interface{}{})
+		return db2.sqlError(err, insert.String(), []any{})
 	}
 
 	return nil
 }
 
-func (db2 *db) UpdateBulk(table string, data interface{}) error {
+func (db2 *db) UpdateBulk(table string, data any) error {
 	return db2.UpdateBulkContext(context.Background(), table, data)
 }
 
 // UpdateBulkContext updates all records of the passed slice. It using a single
 // exec to send the data to the database. This is generally faster than calling Update
 // with a slice (which sends individual update requests).
-func (db2 *db) UpdateBulkContext(ctx context.Context, table string, data interface{}) error {
+func (db2 *db) UpdateBulkContext(ctx context.Context, table string, data any) error {
 	var (
 		rv         reflect.Value
 		structMode bool
@@ -405,84 +403,13 @@ func (db2 *db) UpdateBulkContext(ctx context.Context, table string, data interfa
 		err = ErrMismatchedRowsAffected
 	}
 	if err != nil {
-		return db2.sqlError(err, update.String(), []interface{}{})
+		return db2.sqlError(err, update.String(), []any{})
 	}
 
 	return nil
 }
 
-func (db2 *db) InsertBulkCopyInContext(ctx context.Context, table string, data any) error {
-
-	if db2.driver != POSTGRES {
-		return fmt.Errorf("InsertBulkCopyIn: not supported for driver %q", db2.driver)
-	}
-
-	var (
-		rv         reflect.Value
-		structMode bool
-		err        error
-	)
-
-	rv, structMode, err = checkData(data)
-	if err != nil {
-		return err
-	}
-
-	if structMode {
-		return fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
-	}
-
-	keys_map := map[string]bool{}
-	rows := []map[string]any{}
-
-	if rv.Len() == 0 {
-		return nil
-	}
-
-	for i := 0; i < rv.Len(); i++ {
-		row := reflect.Indirect(rv.Index(i)).Interface()
-		values, _, err := db2.valuesFromStruct(row)
-		if err != nil {
-			return errors.Wrap(err, "sqlpro.InsertBulk error.")
-		}
-		rows = append(rows, values)
-		for key := range values {
-			if keys_map[key] {
-				continue
-			}
-			keys_map[key] = true
-		}
-	}
-
-	keys := slices.Sorted(maps.Keys(keys_map))
-	allRows := make([][]any, len(rows))
-	for idx, row := range rows {
-		values := make([]any, len(keys))
-		for idx, key := range keys {
-			values[idx] = row[key]
-		}
-		allRows[idx] = values
-	}
-
-	golib.Pln("db %T", db2.sqlTx)
-
-	pp.Println(allRows)
-
-	// pgConn := tx.Conn().PgConn()   // ← returns *pgconn.PgConn
-
-	//     rowsCopied, err := pgConn.CopyFrom(
-	//         context.Background(),
-	//         pgx.Identifier{"users"},
-	//         []string{"id", "name", "email", "age"},
-	//         pgx.CopyFromRows(yourRowsHere),
-	//     )
-
-	return fmt.Errorf("Unimplemented")
-
-	return nil
-}
-
-func (db2 *db) insertStruct(ctx context.Context, table string, row interface{}) (int64, structInfo, error) {
+func (db2 *db) insertStruct(ctx context.Context, table string, row any) (int64, structInfo, error) {
 	values, info, err := db2.valuesFromStruct(row)
 	if err != nil {
 		return 0, nil, err
@@ -502,7 +429,7 @@ func (db2 *db) insertStruct(ctx context.Context, table string, row interface{}) 
 			}
 
 			sql = sql + " RETURNING " + db2.Esc(pk.dbName)
-			var insert_id_any interface{}
+			var insert_id_any any
 			if db2.Debug || db2.DebugExec {
 				log.Printf("%s SQL: %s\nARGS:\n%s", db2, sql, argsToString(args...))
 			}
@@ -528,10 +455,10 @@ func (db2 *db) insertStruct(ctx context.Context, table string, row interface{}) 
 	return insert_id, info, nil
 }
 
-func (db2 *db) insertClauseFromValues(table string, values map[string]interface{}, info structInfo) (string, []interface{}, error) {
+func (db2 *db) insertClauseFromValues(table string, values map[string]any, info structInfo) (string, []any, error) {
 	cols := make([]string, 0, len(values))
 	vs := make([]string, 0, len(values))
-	args := make([]interface{}, 0, len(values))
+	args := make([]any, 0, len(values))
 
 	for col, value := range values {
 		cols = append(cols, db2.Esc(col))
@@ -545,13 +472,13 @@ func (db2 *db) insertClauseFromValues(table string, values map[string]interface{
 	), args, nil
 }
 
-func (db2 *db) updateClauseFromRow(table string, row interface{}) (string, []interface{}, error) {
+func (db2 *db) updateClauseFromRow(table string, row any) (string, []any, error) {
 
 	var (
 		valid     bool
-		args      []interface{}
-		whereArgs []interface{}
-		pk_value  interface{}
+		args      []any
+		whereArgs []any
+		pk_value  any
 	)
 
 	values, structInfo, err := db2.valuesFromStruct(row)
@@ -605,7 +532,7 @@ func (db2 *db) updateClauseFromRow(table string, row interface{}) (string, []int
 	return update.String() + where.String(), args, nil
 }
 
-func (db2 *db) Update(table string, data interface{}) error {
+func (db2 *db) Update(table string, data any) error {
 	return db2.UpdateContext(context.Background(), table, data)
 }
 
@@ -613,13 +540,13 @@ func (db2 *db) Update(table string, data interface{}) error {
 // The WHERE clause is put together from the "pk" columns.
 // If not all "pk" columns have non empty values, Update returns
 // an error.
-func (db2 *db) UpdateContext(ctx context.Context, table string, data interface{}) error {
+func (db2 *db) UpdateContext(ctx context.Context, table string, data any) error {
 	var (
 		rv         reflect.Value
 		structMode bool
 		err        error
 		update     string
-		args       []interface{}
+		args       []any
 	)
 
 	if db2 == nil {
@@ -666,7 +593,7 @@ func (db2 *db) UpdateContext(ctx context.Context, table string, data interface{}
 // Save saves the given data. It performs an INSERT if the only primary key is
 // zero, and and UPDATE if it is not. It panics if it the record has no primary
 // key or less than one
-func (db2 *db) Save(table string, data interface{}) error {
+func (db2 *db) Save(table string, data any) error {
 
 	rv, structMode, err := checkData(data)
 	if err != nil {
@@ -687,7 +614,7 @@ func (db2 *db) Save(table string, data interface{}) error {
 	return nil
 }
 
-func (db2 *db) saveRow(table string, data interface{}) error {
+func (db2 *db) saveRow(table string, data any) error {
 	row := reflect.Indirect(reflect.ValueOf(data))
 
 	values, info, err := db2.valuesFromStruct(row.Interface())
@@ -711,15 +638,15 @@ func (db2 *db) saveRow(table string, data interface{}) error {
 
 // valuesFromStruct returns the relevant values
 // from struct, as map
-func (db2 *db) valuesFromStruct(data interface{}) (map[string]interface{}, structInfo, error) {
+func (db2 *db) valuesFromStruct(data any) (map[string]any, structInfo, error) {
 	var (
 		info   structInfo
-		values map[string]interface{}
+		values map[string]any
 		dataV  reflect.Value
 		err    error
 	)
 
-	values = make(map[string]interface{}, 0)
+	values = make(map[string]any, 0)
 	dataV = reflect.ValueOf(data)
 
 	info = getStructInfo(dataV.Type())
@@ -762,7 +689,7 @@ func (db2 *db) valuesFromStruct(data interface{}) (map[string]interface{}, struc
 }
 
 // isZero returns true if given "x" equals Go's empty value.
-func isZero(x interface{}) bool {
+func isZero(x any) bool {
 	if x == nil {
 		return true
 	}
@@ -771,10 +698,10 @@ func isZero(x interface{}) bool {
 
 // execContext wraps DB.Exec and returns the number of affected rows as reported
 // by the driver as well as the ID inserted, if the driver supports it.
-func (db2 *db) execContext(ctx context.Context, execSql string, args ...interface{}) (rowsAffected, insertID int64, err error) {
+func (db2 *db) execContext(ctx context.Context, execSql string, args ...any) (rowsAffected, insertID int64, err error) {
 	var (
 		execSql0 string
-		newArgs  []interface{}
+		newArgs  []any
 	)
 
 	if db2.txExecQueryMtx != nil {
