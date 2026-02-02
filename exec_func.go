@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"runtime/debug"
 
 	// "github.com/jackc/pgx/v5/stdlib"
@@ -33,15 +34,6 @@ func CtxTX(ctx context.Context) TX {
 // ExecTX runs the given function inside a TX. On Postgres in writable TX, the
 // lock timeout is set to 60s. For Sqlite, the PRAGMA foreign_keys is set on.
 func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, opts *sql.TxOptions) (err error) {
-
-	defer func() {
-		r := recover()
-		if r == nil {
-			return
-		}
-		debug.PrintStack()
-		err = fmt.Errorf("sqlpro.ExecTX: panic caught: %v", r)
-	}()
 
 	select {
 	case <-ctx.Done():
@@ -103,7 +95,18 @@ func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, 
 			}
 		}
 	}
-	err = job(CtxWithTX(ctx, tx))
+	err = func() (err error) {
+		defer func() {
+			r := recover()
+			if r == nil {
+				return
+			}
+			err = fmt.Errorf("sqlpro.ExecTX: panic caught: %v", r)
+			fmt.Fprint(os.Stderr, err.Error()+"\n")
+			debug.PrintStack()
+		}()
+		return job(CtxWithTX(ctx, tx))
+	}()
 	if err != nil {
 		return rollback(tx, err)
 	} else {
