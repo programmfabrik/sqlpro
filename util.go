@@ -442,7 +442,7 @@ func (db2 *db) appendPlaceholder(sb *strings.Builder, numArg int) {
 	}
 }
 
-func (db2 *db) EscValueForInsert(value any, fi *fieldInfo) string {
+func (db2 *db) escValueForInsert(value any, fi *fieldInfo) string {
 	vIn := db2.valueForInsert(value, fi)
 	switch v := vIn.(type) {
 	case string:
@@ -742,3 +742,18 @@ func Open(driverS, dsn string) (DB, error) {
 // handle.Wrap -> Wrap yourself
 // handle.Tx -> NewTransaction
 // handle.Prepare -> NewPrearedStatement
+
+// IlikeSql returns driver compatible ILIKE where clause snippet. match is
+// escaped using %...%. This panics for unknown driver. E.g. "schule" and driver
+// "postgres" this will return "ILIKE 'schule'"
+func IlikeSql(driver dbDriver, match string) string {
+	v := escValue("%"+strings.ReplaceAll(match, `%`, `\%`)+`%`) + ` ESCAPE '\'`
+	switch driver {
+	default:
+		panic(fmt.Errorf("unsupported driver %q", driver))
+	case POSTGRES:
+		return `ILIKE ` + v
+	case SQLITE3:
+		return `LIKE ` + v + ` COLLATE NOCASE`
+	}
+}

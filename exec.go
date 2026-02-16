@@ -298,7 +298,7 @@ func (db2 *db) insertBulkContext(ctx context.Context, table string, data any, on
 			if idx2 > 0 {
 				insert.WriteRune(',')
 			}
-			insert.WriteString(db2.EscValueForInsert(row[key], key_map[key]))
+			insert.WriteString(db2.escValueForInsert(row[key], key_map[key]))
 		}
 		insert.WriteRune(')')
 		insert.WriteRune('\n')
@@ -380,7 +380,7 @@ func (db2 *db) UpdateBulkContext(ctx context.Context, table string, data any) er
 				}
 				where.WriteString(db2.Esc(key))
 				where.WriteRune('=')
-				where.WriteString(db2.EscValueForInsert(value2, structInfo[key]))
+				where.WriteString(db2.escValueForInsert(value2, structInfo[key]))
 				whereCount++
 			} else {
 				if idx2 > 0 {
@@ -389,7 +389,7 @@ func (db2 *db) UpdateBulkContext(ctx context.Context, table string, data any) er
 				idx2++
 				update.WriteString(db2.Esc(key))
 				update.WriteRune('=')
-				update.WriteString(db2.EscValueForInsert(value2, structInfo[key]))
+				update.WriteString(db2.escValueForInsert(value2, structInfo[key]))
 			}
 		}
 		update.WriteString(" WHERE ")

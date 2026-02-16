@@ -189,6 +189,10 @@ func (db2 *db) Esc(s string) string {
 
 // EscValue escapes s to use as sql value
 func (db2 *db) EscValue(s string) string {
+	return escValue(s)
+}
+
+func escValue(s string) string {
 	return `'` + strings.ReplaceAll(s, `'`, `''`) + `'`
 }
 
