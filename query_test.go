@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
-	sqlite3 "github.com/mattn/go-sqlite3"
+	"github.com/mattn/go-sqlite3"
+
+	// _ "modernc.org/sqlite"
+
 	"github.com/stretchr/testify/assert"
 )
 

@@ -205,8 +205,16 @@ func (cfd copyFromData) Err() error {
 	return nil
 }
 
-func (cfd copyFromData) Values() ([]any, error) {
-	values := make([]any, len(cfd.columns))
+func (cfd copyFromData) Values() (values []any, err error) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		err = fmt.Errorf("panic: %v", r)
+	}()
+
+	values = make([]any, len(cfd.columns))
 	row := cfd.rows[cfd.nextCounter]
 	for idx, col := range cfd.columns {
 		values[idx] = cfd.db.valueForInsert(row[col], cfd.keyMap[col])
@@ -230,11 +238,10 @@ func (db2 *db) copyFrom(ctx context.Context, table string, data *copyFromData) e
 	return nil
 }
 
-func (db2 *db) insertBulkContext(ctx context.Context, table string, data any, onConflictDoNothing bool, conflictCols []string) error {
+func (db2 *db) insertBulkContext(ctx context.Context, table string, data any, onConflictDoNothing bool, conflictCols []string) (err error) {
 	var (
 		rv         reflect.Value
 		structMode bool
-		err        error
 	)
 
 	rv, structMode, err = checkData(data)
