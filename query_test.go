@@ -6,19 +6,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/mattn/go-sqlite3"
+	// "github.com/mattn/go-sqlite3"
 
-	// _ "modernc.org/sqlite"
+	_ "modernc.org/sqlite"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func init() {
-	sqlite3.SQLiteTimestampFormats[0] = time.RFC3339Nano
+	// sqlite3.SQLiteTimestampFormats[0] = time.RFC3339Nano
 }
 
 func TestMain(m *testing.M) {
@@ -27,7 +28,17 @@ func TestMain(m *testing.M) {
 
 	cleanup()
 
-	dbConn, err = Open("sqlite3", "./test.db?_foreign_keys=1&_journal=wal&_busy_timeout=1000")
+	qv := url.Values{}
+	qv.Set("_foreign_keys", "1")
+	qv.Set("_journal", "wal")
+	qv.Set("_busy_timeout", "1000")
+
+	qv.Add("_pragma", "foreign_keys(1)")
+	qv.Add("_pragma", "busy_timeout(10000)")
+	qv.Add("_time_format", "sqlite")
+	qv.Add("_pragma", "journal_mode(WAL)")
+
+	dbConn, err = Open("sqlite", dbFile+"?"+qv.Encode())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -53,7 +64,9 @@ func TestMain(m *testing.M) {
 	}
 
 	exitCode := m.Run()
-	cleanup()
+	if exitCode == 0 {
+		cleanup()
+	}
 	os.Exit(exitCode)
 }
 
@@ -132,8 +145,10 @@ type testRowUint8Ptr struct {
 	F *json.RawMessage `db:"f"`
 }
 
+const dbFile string = "/tmp/test.db"
+
 func cleanup() {
-	os.Remove("./test.db")
+	os.Remove(dbFile)
 }
 
 func TestInsertSliceStructPtr(t *testing.T) {
@@ -258,6 +273,12 @@ func TestTime(t *testing.T) {
 		return
 	}
 
+	tr = timeStruct{B: &now, C: "timetest2"}
+	err = dbConn.InsertBulk("test", []timeStruct{tr})
+	if !assert.NoError(t, err) {
+		return
+	}
+
 	// timeStr := timeStruct{}
 	// err = dbConn.Query(&timeStr, "SELECT b FROM test WHERE c='timetest'")
 	// if !assert.NoError(t, err) {
@@ -280,19 +301,20 @@ func TestTime(t *testing.T) {
 	assert.Equal(t, now.Format(time.RFC3339Nano), time1.Format(time.RFC3339Nano))
 
 	time2 := &time.Time{}
-	err = dbConn.Query(&time2, "SELECT b FROM test WHERE c='timetest'")
+	err = dbConn.Query(&time2, "SELECT b FROM test WHERE c='timetest' AND b > ? AND b < ?",
+		now.Add(-10*time.Second), now.Add(10*time.Second))
 	if !assert.NoError(t, err) {
 		return
 	}
 	assert.Equal(t, now.Format(time.RFC3339Nano), time2.Format(time.RFC3339Nano))
 
-	time3 := time.Time{}
-	err = dbConn.Query(&time3, "SELECT b FROM test WHERE c='timetest'")
+	time2 = &time.Time{}
+	err = dbConn.Query(&time2, "SELECT b FROM test WHERE c='timetest2' AND b > ? AND b < ?",
+		now.Add(-10*time.Second), now.Add(10*time.Second))
 	if !assert.NoError(t, err) {
 		return
 	}
-	assert.Equal(t, now.Format(time.RFC3339Nano), time3.Format(time.RFC3339Nano))
-
+	assert.Equal(t, now.Format(time.RFC3339Nano), time2.Format(time.RFC3339Nano))
 }
 
 func TestUpdate(t *testing.T) {

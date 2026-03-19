@@ -22,11 +22,6 @@ var ErrMismatchedRowsAffected error = errors.New("Mismatched rows affected")
 // structInfo is a map to fieldInfo by db_name
 type structInfo map[string]*fieldInfo
 
-func (si structInfo) hasDbName(db_name string) bool {
-	_, ok := si[db_name]
-	return ok
-}
-
 func (si structInfo) primaryKey(db_name string) bool {
 	fieldInfo, ok := si[db_name]
 	if !ok {
@@ -73,7 +68,7 @@ func (ni *NullTime) Scan(value any) error {
 	case string:
 		ni.Time, err = time.Parse(time.RFC3339Nano, v)
 		if err != nil {
-			return errors.Wrap(err, "NullTime.Scan")
+			return fmt.Errorf("NullTime.Scan: %w", err)
 		}
 		ni.Valid = true
 	default:
@@ -348,6 +343,12 @@ func (db2 *db) replaceArgs(sqlS string, args ...any) (string, []any, error) {
 		switch arg.(type) {
 		case json.RawMessage:
 			isValue = true
+		default:
+			t, ok := toTime(arg)
+			if ok {
+				arg = t.Format(time.RFC3339Nano)
+				isValue = true
+			}
 		}
 
 		if isValue || driver.IsValue(arg) {
@@ -469,6 +470,9 @@ func (db2 *db) escValueForInsert(value any, fi *fieldInfo) string {
 }
 func toTime(v any) (time.Time, bool) {
 	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return time.Time{}, false
+	}
 	rt := rv.Type()
 	timeType := reflect.TypeOf(time.Time{})
 
@@ -574,13 +578,13 @@ func (db2 *db) valueForInsert(value any, fi *fieldInfo) any {
 	case *string:
 		s = *v
 	case time.Time:
-		return v
+		return v.Format(time.RFC3339Nano)
 	case *time.Time:
-		return *v
+		return v.Format(time.RFC3339Nano)
 	default:
 		t, isTime := toTime(v0)
 		if isTime {
-			return t
+			return t.Format(time.RFC3339Nano)
 		}
 		vr, ok := value.(driver.Valuer)
 		if ok {
