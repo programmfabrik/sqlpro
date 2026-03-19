@@ -697,7 +697,10 @@ func Open(driverS, dsn string) (DB, error) {
 		return nil, fmt.Errorf(`Unknown driver "%s"`, driverS)
 	case "sqlite3":
 		driver = SQLITE3
-		driverName = string(driver)
+		driverName = "sqlite3"
+	case "sqlite":
+		driver = SQLITE3
+		driverName = "sqlite"
 	case "postgres":
 		driver = POSTGRES
 		driverName = "pgx"
