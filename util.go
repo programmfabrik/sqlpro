@@ -586,7 +586,7 @@ func (db2 *db) valueForInsert(value any, fi *fieldInfo) any {
 		return v.Format(db2.timeFormat)
 	case *time.Time:
 		if db2.timeFormat == "" {
-			return v
+			return *v
 		}
 		return v.Format(db2.timeFormat)
 	default:
