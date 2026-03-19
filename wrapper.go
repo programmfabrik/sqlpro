@@ -44,6 +44,7 @@ type db struct {
 	isClosed              bool
 
 	txWriteMode bool
+	timeFormat  string // if set, format time values in this format (used by sqlite)
 
 	LastError error // This is set to the last error
 

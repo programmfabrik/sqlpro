@@ -344,10 +344,12 @@ func (db2 *db) replaceArgs(sqlS string, args ...any) (string, []any, error) {
 		case json.RawMessage:
 			isValue = true
 		default:
-			t, ok := toTime(arg)
-			if ok {
-				arg = t.Format(time.RFC3339Nano)
-				isValue = true
+			if db2.timeFormat != "" {
+				t, ok := toTime(arg)
+				if ok {
+					arg = t.Format(db2.timeFormat)
+					isValue = true
+				}
 			}
 		}
 
@@ -578,13 +580,22 @@ func (db2 *db) valueForInsert(value any, fi *fieldInfo) any {
 	case *string:
 		s = *v
 	case time.Time:
-		return v.Format(time.RFC3339Nano)
+		if db2.timeFormat == "" {
+			return v
+		}
+		return v.Format(db2.timeFormat)
 	case *time.Time:
-		return v.Format(time.RFC3339Nano)
+		if db2.timeFormat == "" {
+			return v
+		}
+		return v.Format(db2.timeFormat)
 	default:
 		t, isTime := toTime(v0)
 		if isTime {
-			return t.Format(time.RFC3339Nano)
+			if db2.timeFormat == "" {
+				return t
+			}
+			return t.Format(db2.timeFormat)
 		}
 		vr, ok := value.(driver.Valuer)
 		if ok {
@@ -738,6 +749,7 @@ func Open(driverS, dsn string) (DB, error) {
 		wrapper.UseReturningForLastId = true
 		wrapper.SupportsLastInsertId = false
 	case SQLITE3:
+		wrapper.timeFormat = time.RFC3339Nano
 	default:
 		return nil, errors.Errorf("sqlpro.Open: Unsupported driver '%s'.", driver)
 	}
