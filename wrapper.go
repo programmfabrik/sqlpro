@@ -12,9 +12,10 @@ import (
 	"sync"
 	"time"
 
+	"errors"
+
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/tw"
-	"github.com/pkg/errors"
 	"github.com/yudai/pp"
 )
 
@@ -91,23 +92,8 @@ type dbWrappable interface {
 }
 
 type Query interface {
-	ExecContext(context.Context, string, ...any) error
-	Exec(string, ...any) error
-	ExecContextRowsAffected(context.Context, string, ...any) (int64, int64, error)
-
-	Insert(string, any) error
-	InsertBulk(string, any) error
-	InsertBulkContext(context.Context, string, any) error
-	InsertBulkOnConflictDoNothingContext(context.Context, string, any, ...string) error
-	InsertContext(context.Context, string, any) error
-	Save(string, any) error
-	Update(string, any) error
-	UpdateContext(context.Context, string, any) error
-	UpdateBulkContext(context.Context, string, any) error
-
 	QueryContext(context.Context, any, string, ...any) error
 	Query(any, string, ...any) error
-
 	Driver() dbDriver
 	EscValue(string) string
 }
@@ -124,7 +110,10 @@ type Exec interface {
 	InsertBulkContext(context.Context, string, any) error
 	InsertBulkOnConflictDoNothingContext(context.Context, string, any, ...string) error
 	InsertContext(context.Context, string, any) error
+
 	Save(string, any) error
+	SaveContext(context.Context, string, any) error
+
 	Update(string, any) error
 	UpdateContext(context.Context, string, any) error
 	UpdateBulkContext(context.Context, string, any) error
@@ -306,7 +295,7 @@ func (db2 *db) Exec(execSql string, args ...any) error {
 
 func (db2 *db) ExecContext(ctx context.Context, execSql string, args ...any) error {
 	if execSql == "" {
-		return db2.debugError(errors.New("Exec: Empty query"))
+		return db2.debugError(fmt.Errorf("Exec: Empty query"))
 	}
 	_, _, err := db2.execContext(ctx, execSql, args...)
 	return err
@@ -371,7 +360,7 @@ func (db2 *db) debugError(err error) error {
 }
 
 func (db2 *db) sqlError(err error, sqlS string, args []any) error {
-	return errors.Wrapf(err, "Database Error: %s", db2.sqlDebug(sqlS, args))
+	return fmt.Errorf("Database Error: %s: %w", db2.sqlDebug(sqlS, args), err)
 }
 
 func (db2 *db) sqlDebug(sqlS string, args []any) string {

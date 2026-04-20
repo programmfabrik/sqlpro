@@ -597,10 +597,14 @@ func (db2 *db) UpdateContext(ctx context.Context, table string, data any) error 
 	return nil
 }
 
+func (db2 *db) Save(table string, data any) error {
+	return db2.SaveContext(context.Background(), table, data)
+}
+
 // Save saves the given data. It performs an INSERT if the only primary key is
 // zero, and and UPDATE if it is not. It panics if it the record has no primary
 // key or less than one
-func (db2 *db) Save(table string, data any) error {
+func (db2 *db) SaveContext(ctx context.Context, table string, data any) error {
 
 	rv, structMode, err := checkData(data)
 	if err != nil {
@@ -608,10 +612,10 @@ func (db2 *db) Save(table string, data any) error {
 	}
 
 	if structMode {
-		return db2.saveRow(table, data)
+		return db2.saveRow(ctx, table, data)
 	} else {
 		for i := 0; i < rv.Len(); i++ {
-			err = db2.saveRow(table, rv.Index(i).Interface())
+			err = db2.saveRow(ctx, table, rv.Index(i).Interface())
 			if err != nil {
 				return err
 			}
@@ -621,7 +625,7 @@ func (db2 *db) Save(table string, data any) error {
 	return nil
 }
 
-func (db2 *db) saveRow(table string, data any) error {
+func (db2 *db) saveRow(ctx context.Context, table string, data any) error {
 	row := reflect.Indirect(reflect.ValueOf(data))
 
 	values, info, err := db2.valuesFromStruct(row.Interface())
@@ -637,9 +641,9 @@ func (db2 *db) saveRow(table string, data any) error {
 	pk_value, ok := values[pk.dbName]
 
 	if !ok || isZero(pk_value) {
-		return db2.Insert(table, data)
+		return db2.InsertContext(ctx, table, data)
 	} else {
-		return db2.Update(table, data)
+		return db2.UpdateContext(ctx, table, data)
 	}
 }
 
