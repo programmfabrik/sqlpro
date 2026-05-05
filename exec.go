@@ -763,13 +763,21 @@ func (db2 *db) execContext(ctx context.Context, execSql string, args ...any) (ro
 		break
 	}
 
-	row_count, _ := func() (n int64, err error) {
-		defer func() { recover() }()
-		// Ignore error/panic: empty statements return no result in pq (error) or sqlite (nil pointer panic)
+	row_count, err := func() (n int64, err error) {
+		defer func() {
+			if err != nil {
+				return
+			}
+			// check if we have a panic (sqlite panics with empty execSql0 here)
+			pnc := recover()
+			if pnc != nil {
+				err = fmt.Errorf("%v", pnc)
+			}
+		}()
 		return result.RowsAffected()
 	}()
 
-	if !db2.SupportsLastInsertId {
+	if !db2.SupportsLastInsertId || err != nil {
 		return row_count, 0, nil
 	}
 
