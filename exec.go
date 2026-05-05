@@ -763,12 +763,11 @@ func (db2 *db) execContext(ctx context.Context, execSql string, args ...any) (ro
 		break
 	}
 
-	row_count, err := result.RowsAffected()
-	if err != nil {
-		// Ignore the error here, we might get
-		// no RowsAffected available after the empty statement from pq driver
-		// which is ok and not a real error (it happens with empty statements)
-	}
+	row_count, _ := func() (n int64, err error) {
+		defer func() { recover() }()
+		// Ignore error/panic: empty statements return no result in pq (error) or sqlite (nil pointer panic)
+		return result.RowsAffected()
+	}()
 
 	if !db2.SupportsLastInsertId {
 		return row_count, 0, nil
