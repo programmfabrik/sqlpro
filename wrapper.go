@@ -49,6 +49,7 @@ type db struct {
 
 	LastError error // This is set to the last error
 
+	txBeforeCommit  []func() error
 	txAfterCommit   []func()
 	txAfterRollback []func()
 
@@ -138,6 +139,7 @@ type TX interface {
 	Query
 	Exec
 
+	BeforeCommit(func() error)
 	AfterCommit(func())
 	AfterRollback(func())
 	AfterTransaction(func())

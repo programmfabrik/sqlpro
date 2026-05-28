@@ -109,9 +109,8 @@ func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, 
 	}()
 	if err != nil {
 		return rollback(tx, err)
-	} else {
-		return commit(tx)
 	}
+	return commit(tx)
 }
 
 func rollback(tx TX, err error) error {

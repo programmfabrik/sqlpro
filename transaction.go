@@ -120,6 +120,18 @@ func (db2 *db) Commit() error {
 	// 	log.Printf("COMMIT WRITE #%d took %s", db.transID, time.Since(db.txStart))
 	// }
 
+	// Run before-commit hooks while the TX is still open, after the body, so
+	// their writes commit atomically with it. A hook error rolls the whole
+	// transaction back.
+	for _, f := range db2.txBeforeCommit {
+		if err := f(); err != nil {
+			if rbErr := db2.Rollback(); rbErr != nil {
+				return fmt.Errorf("beforeCommit hook: %w; rollback: %w", err, rbErr)
+			}
+			return fmt.Errorf("beforeCommit hook: %w", err)
+		}
+	}
+
 	err := db2.sqlTx.Commit()
 	db2.sqlTx = nil
 
@@ -177,6 +189,19 @@ func (db2 *db) AfterTransaction(f func()) {
 	}
 	db2.AfterCommit(f)
 	db2.AfterRollback(f)
+}
+
+// BeforeCommit registers a hook that runs in Commit, just before the
+// underlying commit. Hooks run in registration order; if any returns an error
+// the transaction is rolled back and the error is returned from Commit. Use
+// this instead of AfterCommit when the hook's writes must be atomic with the
+// rest of the transaction — e.g. bumping a cache version that other
+// transactions read to detect changes.
+func (db2 *db) BeforeCommit(f func() error) {
+	if db2.sqlTx == nil {
+		panic("sqlpro.DB.BeforeCommit: Needs Transaction.")
+	}
+	db2.txBeforeCommit = append(db2.txBeforeCommit, f)
 }
 
 func (db2 *db) AfterCommit(f func()) {
