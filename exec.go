@@ -91,7 +91,7 @@ func (db2 *db) InsertContext(ctx context.Context, table string, data any) error 
 			}
 			pk := structInfo.onlyPrimaryKey()
 			if pk != nil && pk.structField.Type.Kind() == reflect.Int64 {
-				setPrimaryKey(row.FieldByName(pk.name), insert_id)
+				setPrimaryKey(row.FieldByIndex(pk.structField.Index), insert_id)
 			}
 		}
 	} else {
@@ -113,7 +113,7 @@ func (db2 *db) InsertContext(ctx context.Context, table string, data any) error 
 				reflect.Uint16,
 				reflect.Uint32,
 				reflect.Uint64:
-				setPrimaryKey(rv.FieldByName(pk.name), insert_id)
+				setPrimaryKey(rv.FieldByIndex(pk.structField.Index), insert_id)
 			}
 		}
 	}
@@ -663,7 +663,7 @@ func (db2 *db) valuesFromStruct(data any) (map[string]any, structInfo, error) {
 	info = getStructInfo(dataV.Type())
 
 	for _, fieldInfo := range info {
-		dataF := dataV.FieldByName(fieldInfo.name)
+		dataF := dataV.FieldByIndex(fieldInfo.structField.Index)
 
 		actualData := dataF.Interface()
 		isZero := isZero(actualData)

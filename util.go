@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -163,8 +164,19 @@ func (fi *fieldInfo) allowNull() bool {
 	return false
 }
 
+// structInfoCache memoizes getStructInfo by reflect.Type. A struct's field
+// layout is fixed for the life of the process, so the derived structInfo never
+// changes; computing it via reflection on every scanned row (scanRow) and every
+// insert/update (valuesFromStruct) is pure overhead. The result is treated as
+// read-only by all callers, so it is safe to share across goroutines.
+var structInfoCache sync.Map // reflect.Type -> structInfo
+
 // getStructInfo returns a per dbName to fieldInfo map
 func getStructInfo(t reflect.Type) structInfo {
+	if cached, ok := structInfoCache.Load(t); ok {
+		return cached.(structInfo)
+	}
+
 	si := structInfo{}
 
 	// Resolve anonymous fields
@@ -176,7 +188,14 @@ func getStructInfo(t reflect.Type) structInfo {
 			}
 
 			for dbName, info := range getStructInfo(field.Type) {
-				si[dbName] = info
+				// Copy: the embedded type's structInfo is cached and shared, so
+				// we must not mutate its fieldInfo. Compose the full field index
+				// path from the outer struct (field.Index) through the embedded
+				// field's own path, so FieldByIndex on the outer struct resolves
+				// the promoted field directly.
+				merged := *info
+				merged.structField.Index = append(append([]int{}, field.Index...), info.structField.Index...)
+				si[dbName] = &merged
 			}
 		}
 	}
@@ -266,6 +285,7 @@ func getStructInfo(t reflect.Type) structInfo {
 	}
 
 	// logrus.Infof("%s %#v", t.Name(), si)
+	structInfoCache.Store(t, si)
 	return si
 }
 

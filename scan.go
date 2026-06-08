@@ -55,7 +55,10 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 
 	switch targetV.Kind() {
 	case reflect.Struct:
-		info = getStructInfo(reflect.ValueOf(targetV.Interface()).Type())
+		// targetV.Type() gives the struct type directly; the previous
+		// reflect.ValueOf(targetV.Interface()).Type() boxed (copied) the whole
+		// struct into an interface on every row just to read its type.
+		info = getStructInfo(targetV.Type())
 		isStruct = true
 	case reflect.Slice:
 		isSlice = true
@@ -100,7 +103,7 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 			if !ok {
 				skip = true
 			} else {
-				fieldV = targetV.FieldByName(finfo.name)
+				fieldV = targetV.FieldByIndex(finfo.structField.Index)
 				if finfo.isJson {
 					// log.Printf("Setting field to json: %v idx: %d", finfo.name, idx)
 					data[idx] = &NullJson{}
@@ -350,6 +353,20 @@ func Scan(target interface{}, rows *sql.Rows) error {
 
 	if targetValue.Type().Kind() != reflect.Slice {
 		rowMode = true
+	} else {
+		// Fast path: a slice of struct / *struct (the common bulk query). Build
+		// the column plan, scan buffer and null-scanners once and reuse them for
+		// every row. time.Time is a struct but is handled as a scalar below.
+		elemType := targetValue.Type().Elem()
+		structType := elemType
+		elemIsPtr := false
+		if structType.Kind() == reflect.Ptr {
+			elemIsPtr = true
+			structType = structType.Elem()
+		}
+		if structType.Kind() == reflect.Struct && structType != typeTime {
+			return scanStructSlice(targetValue, structType, elemIsPtr, rows)
+		}
 	}
 
 	for rows.Next() {
