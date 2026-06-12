@@ -8,7 +8,7 @@ import (
 )
 
 type row struct {
-	Id    int    `db:"id,pk"`
+	Id    int    `db:"id,pk,omitempty"`
 	Name  string `db:"name"`
 	Value int    `db:"value"`
 }
@@ -28,8 +28,8 @@ func TestCopyFrom(t *testing.T) {
 	rows := []row{
 		{0, "Alice", 100},
 		{0, "Bob", 200},
-		{0, "Bob", 200},
 		{0, "Charlie", 300},
+		{0, "Dora", 400},
 	}
 
 	err = db.ExecTX(ctx, func(ctx context.Context) error {
