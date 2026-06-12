@@ -367,6 +367,12 @@ func Scan(target interface{}, rows *sql.Rows) error {
 		if structType.Kind() == reflect.Struct && structType != typeTime {
 			return scanStructSlice(targetValue, structType, elemIsPtr, rows)
 		}
+		// Fast path: a slice of predeclared scalars ([]int64, []string, ...) or
+		// pointers to one. Reuses one null-scanner and one scan buffer for all
+		// rows instead of rebuilding the scan machinery per row.
+		if kind, ok := scalarScanKind(structType, elemIsPtr); ok {
+			return scanScalarSlice(targetValue, elemType, elemIsPtr, kind, rows)
+		}
 	}
 
 	for rows.Next() {

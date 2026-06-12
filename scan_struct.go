@@ -233,6 +233,93 @@ func readbackCol(fieldV reflect.Value, p *colPlan) error {
 	return nil
 }
 
+// scalarScanKind classifies a slice element type for the scalar-slice fast
+// path. It matches only the predeclared scalar types (and time.Time), exactly
+// like the concrete-type switches in scanRow: named types such as
+// "type ID int64" keep using the generic path (direct scan, no null-scanner).
+// ok is false for types the fast path does not handle.
+func scalarScanKind(baseType reflect.Type, isPtr bool) (kind scanKind, ok bool) {
+	if baseType == typeTime {
+		// []*time.Time keeps the generic path: it scans through the
+		// dereferenced struct, so a NULL yields a non-nil pointer to a zero
+		// time there — the fast path would yield nil instead.
+		return kindTime, !isPtr
+	}
+	if baseType.PkgPath() != "" {
+		return 0, false
+	}
+	switch baseType.Kind() {
+	case reflect.String:
+		return kindString, true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return kindInt64, true
+	case reflect.Float32, reflect.Float64:
+		return kindFloat64, true
+	case reflect.Bool:
+		return kindBool, true
+	}
+	return 0, false
+}
+
+// scanScalarSlice scans the first column of every row into target, a slice of
+// predeclared scalar values ([]int64, []string, []*int64, []time.Time, ...).
+// The null-scanner and the scan-destination buffer are allocated once and
+// reused for every row; columns past the first are ignored, as in scanRow.
+// This is the fast path for the common "SELECT id FROM ..." bulk query.
+func scanScalarSlice(target reflect.Value, elemType reflect.Type, elemIsPtr bool, kind scanKind, rows *sql.Rows) error {
+	cols, err := rows.Columns()
+	if err != nil {
+		return err
+	}
+
+	var scanner any
+	switch kind {
+	case kindString:
+		scanner = &sql.NullString{}
+	case kindInt64:
+		scanner = &sql.NullInt64{}
+	case kindFloat64:
+		scanner = &sql.NullFloat64{}
+	case kindBool:
+		scanner = &sql.NullBool{}
+	case kindTime:
+		scanner = &NullTime{}
+	}
+
+	// Only the first column maps onto the value, the rest is discarded.
+	data := make([]any, len(cols))
+	if len(cols) > 0 {
+		data[0] = scanner
+	}
+	for i := 1; i < len(cols); i++ {
+		data[i] = sharedVoidScan
+	}
+
+	p := &colPlan{kind: kind, ptr: elemIsPtr, scanner: scanner}
+
+	// Work on a local slice header and write it back to the target once (and
+	// on error, so rows scanned before a failure stay visible, as in the
+	// generic path).
+	slice := target
+	for rows.Next() {
+		if err := rows.Scan(data...); err != nil {
+			target.Set(slice)
+			return err
+		}
+		slice = reflect.Append(slice, reflect.Zero(elemType))
+		if len(cols) == 0 {
+			continue
+		}
+		if err := readbackCol(slice.Index(slice.Len()-1), p); err != nil {
+			target.Set(slice)
+			return err
+		}
+	}
+	target.Set(slice)
+	return rows.Err()
+}
+
 // scanStructSlice scans every row into target, a slice of struct or *struct.
 // The column plan, the scan-destination buffer and the null-scanners are built
 // once and reused across all rows; only the new element itself is allocated per
