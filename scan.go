@@ -202,7 +202,7 @@ func scanRow(target reflect.Value, rows *sql.Rows) error {
 		}
 
 		switch v0 := fieldV.Interface().(type) {
-		case *string, *int32, *int16, *int8, *int64, *uint64, *uint, *uint16, *uint32, *float64, *int, *bool:
+		case *string, *int32, *int16, *int8, *int64, *uint64, *uint, *uint8, *uint16, *uint32, *float64, *float32, *int, *bool:
 			switch v := data[idx].(type) {
 			case *sql.NullBool:
 				if (*v).Valid {
