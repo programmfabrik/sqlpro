@@ -332,19 +332,34 @@ func scanStructSlice(target reflect.Value, structType reflect.Type, elemIsPtr bo
 
 	plan := buildColPlan(cols, getStructInfo(structType))
 	data := make([]any, len(cols))
-	elemType := target.Type().Elem()
+
+	// chunk of structs handed out one-by-one for []*T targets: one allocation
+	// per chunkSize rows instead of one reflect.New per row.
+	const chunkSize = 64
+	var chunk reflect.Value
+	chunkNext := chunkSize // force initial allocation
+	var structSliceType reflect.Type
+	if elemIsPtr {
+		structSliceType = reflect.SliceOf(structType)
+	}
 
 	for rows.Next() {
-		// Grow the destination by one and obtain the new, addressable element
-		// (reflect.Append amortizes the backing growth).
-		target.Set(reflect.Append(target, reflect.Zero(elemType)))
-		elemV := target.Index(target.Len() - 1)
+		// Grow the destination by one in place; Grow amortizes the backing
+		// growth, SetLen exposes the new zeroed element.
+		n := target.Len()
+		target.Grow(1)
+		target.SetLen(n + 1)
+		elemV := target.Index(n)
 
 		structV := elemV
 		if elemIsPtr {
-			structV = reflect.New(structType)
-			elemV.Set(structV)
-			structV = structV.Elem()
+			if chunkNext == chunkSize {
+				chunk = reflect.MakeSlice(structSliceType, chunkSize, chunkSize)
+				chunkNext = 0
+			}
+			structV = chunk.Index(chunkNext)
+			chunkNext++
+			elemV.Set(structV.Addr())
 		}
 
 		// Bind scan destinations: reused scanners for null-scanner columns,

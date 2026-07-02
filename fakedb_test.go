@@ -287,7 +287,7 @@ func (r *fakeRows) Next(dest []driver.Value) error {
 // newFakeSqlPro returns a sqlpro wrapper connected to a fake backend,
 // replicating the driver-specific wiring of Open (util.go) without going
 // through driver registration.
-func newFakeSqlPro(t *testing.T, drv dbDriver) (*db, *fakeBackend) {
+func newFakeSqlPro(t testing.TB, drv dbDriver) (*db, *fakeBackend) {
 	t.Helper()
 
 	backend := &fakeBackend{}
