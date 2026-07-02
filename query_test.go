@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -1085,5 +1086,50 @@ func TestEmbed(t *testing.T) {
 	}
 	if !assert.Greater(t, tr.A, int64(0)) {
 		return
+	}
+}
+
+func TestInsertBulkSQL(t *testing.T) {
+	rows := make([]*testRow, 0)
+	for i := 0; i < 5; i++ {
+		tr := &testRow{
+			B: fmt.Sprintf("bulk sql row %d", i+1),
+			D: float64(i + 1),
+		}
+		rows = append(rows, tr)
+	}
+
+	sql, err := dbConn.InsertBulkSQL("test", rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(sql, `INSERT INTO "test" (`) {
+		t.Errorf("unexpected sql prefix: %s", sql)
+	}
+
+	// the returned statement is runnable and can be extended, e.g. with a
+	// RETURNING clause
+	ids := []int64{}
+	err = dbConn.Query(&ids, sql+` RETURNING "a"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != len(rows) {
+		t.Errorf("expected %d ids, got %d", len(rows), len(ids))
+	}
+	for _, id := range ids {
+		if id <= 0 {
+			t.Errorf("expected a positive id, got %d", id)
+		}
+	}
+}
+
+func TestInsertBulkSQLNoRows(t *testing.T) {
+	sql, err := dbConn.InsertBulkSQL("test", []*testRow{})
+	if err != nil {
+		t.Error(err)
+	}
+	if sql != "" {
+		t.Errorf("expected an empty statement for an empty slice, got %q", sql)
 	}
 }

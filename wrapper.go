@@ -110,6 +110,7 @@ type Exec interface {
 	InsertBulk(string, any) error
 	InsertBulkContext(context.Context, string, any) error
 	InsertBulkOnConflictDoNothingContext(context.Context, string, any, ...string) error
+	InsertBulkSQL(string, any) (string, error)
 	InsertContext(context.Context, string, any) error
 
 	Save(string, any) error

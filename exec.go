@@ -159,13 +159,24 @@ func (db2 *db) InsertBulk(table string, data any) error {
 //
 // sqlpro will executes one INSERT statement per call.
 func (db2 *db) InsertBulkContext(ctx context.Context, table string, data any) error {
-	return db2.insertBulkContext(ctx, table, data, false, nil)
+	_, err := db2.insertBulkContext(ctx, table, data, false, nil, false)
+	return err
 }
 
 // InsertBulkOnConflictDoNothingContext works like InsertBulkContext but adds a
 // "ON CONFLICT DO NOTHING" to the insert command.
 func (db2 *db) InsertBulkOnConflictDoNothingContext(ctx context.Context, table string, data any, cols ...string) error {
-	return db2.insertBulkContext(ctx, table, data, true, cols)
+	_, err := db2.insertBulkContext(ctx, table, data, true, cols, false)
+	return err
+}
+
+// InsertBulkSQL builds the multi-row INSERT statement InsertBulk would run
+// for data, without executing it. The values are rendered as escaped
+// literals, so the returned SQL takes no arguments. The caller can extend the
+// statement, e.g. with a RETURNING clause, and run it. For an empty slice the
+// returned statement is empty.
+func (db2 *db) InsertBulkSQL(table string, data any) (string, error) {
+	return db2.insertBulkContext(context.Background(), table, data, false, nil, true)
 }
 
 type copyFromData struct {
@@ -321,7 +332,7 @@ func (db2 *db) fieldValueForBulk(dataV reflect.Value, fi *fieldInfo) (any, error
 	return actualData, nil
 }
 
-func (db2 *db) insertBulkContext(ctx context.Context, table string, data any, onConflictDoNothing bool, conflictCols []string) (err error) {
+func (db2 *db) insertBulkContext(ctx context.Context, table string, data any, onConflictDoNothing bool, conflictCols []string, sqlOnly bool) (sql string, err error) {
 	var (
 		rv         reflect.Value
 		structMode bool
@@ -329,22 +340,22 @@ func (db2 *db) insertBulkContext(ctx context.Context, table string, data any, on
 
 	rv, structMode, err = checkData(data)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if structMode {
-		return fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
+		return "", fmt.Errorf("InsertBulk: Need Slice to insert bulk.")
 	}
 
 	l := rv.Len()
 	if l == 0 {
-		return nil
+		return "", nil
 	}
 
 	// Pass 1: determine the column set without materializing any values.
 	// A column is included if it is not read-only and either is not tagged
 	// omitempty or has a non-zero value in at least one row.
-	useCopyFrom := !onConflictDoNothing && db2.pgxConn() != nil
+	useCopyFrom := !onConflictDoNothing && !sqlOnly && db2.pgxConn() != nil
 	var (
 		key_map    = map[string]*fieldInfo{}
 		keys       = []string{}
@@ -393,14 +404,14 @@ func (db2 *db) insertBulkContext(ctx context.Context, table string, data any, on
 		// fails before any SQL is sent, like the literal path does.
 		for _, fi := range jsonFields {
 			if _, err := db2.fieldValueForBulk(dataV, fi); err != nil {
-				return fmt.Errorf("sqlpro.insertBulkContext: %w", err)
+				return "", fmt.Errorf("sqlpro.insertBulkContext: %w", err)
 			}
 		}
 	}
 
 	// Use faster COPY FROM for postgres if possible
 	if useCopyFrom {
-		return db2.copyFrom(ctx, table, newCopyFromData(db2, key_map, keys, rv))
+		return "", db2.copyFrom(ctx, table, newCopyFromData(db2, key_map, keys, rv))
 	}
 
 	insert := strings.Builder{} // make([]string, 0)
@@ -439,7 +450,7 @@ func (db2 *db) insertBulkContext(ctx context.Context, table string, data any, on
 			if fi != nil {
 				value, err = db2.fieldValueForBulk(dataV, fi)
 				if err != nil {
-					return fmt.Errorf("sqlpro.insertBulkContext: %w", err)
+					return "", fmt.Errorf("sqlpro.insertBulkContext: %w", err)
 				}
 			} else {
 				// column not present on this row's type: render NULL with the
@@ -464,15 +475,19 @@ func (db2 *db) insertBulkContext(ctx context.Context, table string, data any, on
 		}
 	}
 
+	if sqlOnly {
+		return insert.String(), nil
+	}
+
 	rowsAffected, _, err := db2.execContext(ctx, insert.String())
 	if !onConflictDoNothing && err == nil && rowsAffected != int64(l) {
 		err = ErrMismatchedRowsAffected
 	}
 	if err != nil {
-		return db2.sqlError(err, insert.String(), []any{})
+		return "", db2.sqlError(err, insert.String(), []any{})
 	}
 
-	return nil
+	return "", nil
 }
 
 func (db2 *db) UpdateBulk(table string, data any) error {
