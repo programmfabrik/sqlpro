@@ -13,9 +13,11 @@ type city struct {
 	Pop  int64  `db:"pop"`
 }
 
-// bulkExample shows the set-at-a-time write helpers. On PostgreSQL InsertBulk
-// transparently uses COPY FROM for large batches; on SQLite it builds multi-row
-// INSERTs (chunked to stay under the placeholder limit).
+// bulkExample shows the set-at-a-time write helpers. InsertBulk renders one
+// multi-row INSERT with the values as literals and — when the rows have a
+// single auto-assigned integer pk — reads the generated keys back via
+// RETURNING. On PostgreSQL (inside ExecTX), batches without that read-back
+// use COPY FROM.
 func bulkExample(ctx context.Context, db sqlpro.DB) error {
 	err := db.Exec(`CREATE TABLE city(
 		id   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,13 +33,17 @@ func bulkExample(ctx context.Context, db sqlpro.DB) error {
 		{Name: "Munich", Pop: 1500000},
 	}
 
-	// One round-trip for all rows.
+	// One statement for all rows. The city struct has a single auto-assigned
+	// integer pk ("pk,omitempty") and no row has it pre-set, so the generated
+	// keys are automatically read back into the rows.
 	if err := db.InsertBulk("city", rows); err != nil {
 		return err
 	}
-	fmt.Printf("bulk-inserted %d cities\n", len(rows))
+	fmt.Printf("bulk-inserted %d cities, ids %d..%d\n", len(rows), rows[0].ID, rows[2].ID)
 
 	// Skip rows that would violate a unique/primary key instead of erroring.
+	// The key read-back is per row: Berlin conflicts and keeps its zero id,
+	// Cologne is inserted and gets its id.
 	dupes := []*city{
 		{Name: "Berlin", Pop: 9999999}, // already exists -> skipped
 		{Name: "Cologne", Pop: 1100000},
@@ -45,9 +51,8 @@ func bulkExample(ctx context.Context, db sqlpro.DB) error {
 	if err := db.InsertBulkOnConflictDoNothingContext(ctx, "city", dupes, "name"); err != nil {
 		return err
 	}
+	fmt.Printf("conflict batch: berlin id=%d (skipped), cologne id=%d\n", dupes[0].ID, dupes[1].ID)
 
-	// UpdateBulk updates many rows by primary key in one call. (InsertBulk does
-	// not read generated keys back, so load the rows first to get their ids.)
 	var all []*city
 	if err := db.Query(&all, "SELECT * FROM city"); err != nil {
 		return err
@@ -68,7 +73,7 @@ func bulkExample(ctx context.Context, db sqlpro.DB) error {
 }
 
 // tagged demonstrates the db-struct tags. Embedded structs are flattened, so
-// "meta" columns map as if declared inline.
+// the embedded audit struct's column maps as if declared inline.
 type tagged struct {
 	audit // embedded -> its columns are promoted
 

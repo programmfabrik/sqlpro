@@ -93,46 +93,89 @@ type dbWrappable interface {
 }
 
 type Query interface {
+	// QueryContext runs the query and scans the result into target: a
+	// pointer to a struct, a slice of structs / struct pointers, a scalar
+	// or a slice of scalars.
 	QueryContext(context.Context, any, string, ...any) error
+	// Query works like QueryContext with context.Background().
 	Query(any, string, ...any) error
+	// Driver returns the database driver the connection runs on.
 	Driver() dbDriver
+	// EscValue returns s as an escaped SQL string literal (single quoted).
 	EscValue(string) string
 }
 
 type Exec interface {
 	Query
 
+	// ExecContext executes the statement.
 	ExecContext(context.Context, string, ...any) error
+	// Exec works like ExecContext with context.Background().
 	Exec(string, ...any) error
+	// ExecContextRowsAffected executes the statement and returns the number
+	// of affected rows and the last insert id (if the driver supports it).
 	ExecContextRowsAffected(context.Context, string, ...any) (int64, int64, error)
 
+	// Insert inserts one struct (or each row of a slice, one statement per
+	// row) into the table and writes the generated primary key back into
+	// the row (in slice mode only into an int64 key).
 	Insert(string, any) error
+	// InsertBulk inserts a slice of structs with one multi-row INSERT
+	// (COPY FROM on postgres inside ExecTX). When the rows have a single
+	// auto-assigned signed-integer primary key ("pk,omitempty", none
+	// pre-set), the generated keys are automatically read back into the
+	// rows.
 	InsertBulk(string, any) error
+	// InsertBulkContext works like InsertBulk with a context.
 	InsertBulkContext(context.Context, string, any) error
+	// InsertBulkOnConflictDoNothingContext works like InsertBulkContext but
+	// adds ON CONFLICT (cols...) DO NOTHING to the statement. The key
+	// read-back is per row: an inserted row gets its generated key, a
+	// conflicted (skipped) row keeps its zero key.
 	InsertBulkOnConflictDoNothingContext(context.Context, string, any, ...string) error
-	InsertBulkSQL(string, any) (string, error)
+	// InsertContext works like Insert with a context.
 	InsertContext(context.Context, string, any) error
 
+	// Save inserts the struct if its primary key is zero, otherwise it
+	// updates the row.
 	Save(string, any) error
+	// SaveContext works like Save with a context.
 	SaveContext(context.Context, string, any) error
 
+	// Update updates the table row matching the struct's primary key,
+	// setting all non-readonly columns (omitempty columns are skipped
+	// when their value is zero).
 	Update(string, any) error
+	// UpdateContext works like Update with a context.
 	UpdateContext(context.Context, string, any) error
+	// UpdateBulkContext updates each row of a slice, one statement per row.
 	UpdateBulkContext(context.Context, string, any) error
 }
 
 type DB interface {
 	Query
 	Exec
+	// Begin starts a read-write transaction.
 	Begin() (TX, error)
+	// BeginRead starts a read-only transaction.
 	BeginRead() (TX, error)
+	// BeginContext starts a transaction with the given options.
 	BeginContext(context.Context, *sql.TxOptions) (TX, error)
+	// Close closes the database connection.
 	Close() error
+	// IsClosed reports whether Close was called.
 	IsClosed() bool
+	// Name returns the name of the connected database.
 	Name() (string, error)
+	// DB returns the wrapped stdlib sql.DB handle.
 	DB() *sql.DB
+	// Log returns a debug handle which logs every statement; queries are
+	// run an extra time to print their result table. Development only.
 	Log() DB
+	// Version returns the database server version.
 	Version() (string, error)
+	// ExecTX runs f inside a transaction: commit if f returns nil,
+	// rollback otherwise.
 	ExecTX(context.Context, func(context.Context) error, *sql.TxOptions) error
 }
 
@@ -140,17 +183,29 @@ type TX interface {
 	Query
 	Exec
 
+	// BeforeCommit registers f to run before the commit; an error from f
+	// aborts the commit.
 	BeforeCommit(func() error)
+	// AfterCommit registers f to run after a successful commit.
 	AfterCommit(func())
+	// AfterRollback registers f to run after a rollback.
 	AfterRollback(func())
+	// AfterTransaction registers f to run after the transaction ended,
+	// after a successful commit or rollback (not when the underlying
+	// commit/rollback itself fails).
 	AfterTransaction(func())
 
+	// ActiveTX reports whether the transaction is still open.
 	ActiveTX() bool
+	// IsWriteMode reports whether the transaction is read-write.
 	IsWriteMode() bool
 
+	// Commit commits the transaction.
 	Commit() error
+	// Rollback rolls the transaction back.
 	Rollback() error
 
+	// EscValue returns s as an escaped SQL string literal (single quoted).
 	EscValue(string) string
 }
 
@@ -304,8 +359,8 @@ func (db2 *db) ExecContext(ctx context.Context, execSql string, args ...any) err
 	return err
 }
 
-// ExecContextExp executes execSql in context ctx. If the number of rows affected
-// doesn't match expRows, an error is returned.
+// ExecContextRowsAffected executes execSql in context ctx and returns the
+// number of affected rows and the last insert id (if the driver supports it).
 func (db2 *db) ExecContextRowsAffected(ctx context.Context, execSql string, args ...any) (rowsAffected int64, insertID int64, err error) {
 	if execSql == "" {
 		return 0, 0, db2.debugError(errors.New("Exec: Empty query"))

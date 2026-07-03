@@ -47,7 +47,49 @@ func TestCopyFrom(t *testing.T) {
 			return err
 		}
 
-		return tx.InsertBulk("temp_example", rows)
+		// this batch qualifies for the key read-back (single auto-assigned
+		// pk, none pre-set), so it runs as INSERT ... RETURNING, not COPY
+		err = tx.InsertBulk("temp_example", rows)
+		if err != nil {
+			return err
+		}
+		for i := range rows {
+			assert.Greater(t, rows[i].Id, 0, "row %d has no id", i)
+			if i > 0 {
+				assert.Greater(t, rows[i].Id, rows[i-1].Id)
+			}
+		}
+
+		// pre-set keys disable the read-back: this batch uses COPY FROM
+		preset := []row{
+			{100, "Emil", 500},
+			{101, "Frida", 600},
+		}
+		err = tx.InsertBulk("temp_example", preset)
+		if err != nil {
+			return err
+		}
+
+		var total int64
+		err = tx.Query(&total, `SELECT count(*) FROM temp_example`)
+		if err != nil {
+			return err
+		}
+		assert.Equal(t, int64(len(rows)+len(preset)), total)
+
+		// ON CONFLICT DO NOTHING: per-row read-back — the conflicted row
+		// keeps its zero id, the inserted row gets its id
+		conf := []row{
+			{0, "Alice", 700}, // conflicts on name
+			{0, "Gina", 800},
+		}
+		err = tx.InsertBulkOnConflictDoNothingContext(ctx, "temp_example", conf, "name")
+		if err != nil {
+			return err
+		}
+		assert.Equal(t, 0, conf[0].Id, "conflicted row keeps zero id")
+		assert.Greater(t, conf[1].Id, 0, "inserted row gets its id")
+		return nil
 	}, nil)
 	if !assert.NoError(t, err) {
 		return

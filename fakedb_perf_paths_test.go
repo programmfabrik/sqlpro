@@ -120,17 +120,21 @@ func TestFakeInsertBulkOmitemptyUnion(t *testing.T) {
 	}
 	db, backend := newFakeSqlPro(t, SQLITE3)
 
+	// the rows qualify for the pk read-back, so the bulk insert runs as a
+	// RETURNING query, not an exec
+
 	// note is zero in row 1 but set in row 2 -> column included, row 1 = NULL
-	backend.queueExec(2, 0)
+	backend.queueQuery([]string{"id"}, fakeValueRows(int64(1), int64(2)))
 	require.NoError(t, db.InsertBulk("t", []row{{Name: "a"}, {Name: "b", Note: "n"}}))
-	st, _ := backend.lastStatement("exec")
+	st, _ := backend.lastStatement("query")
 	assert.Contains(t, st.sql, `"note"`)
 	assert.Contains(t, st.sql, "NULL", "omitted cell of row 1 renders as NULL")
+	assert.Contains(t, st.sql, `RETURNING "id"`)
 
 	// note zero in ALL rows -> column not emitted at all
-	backend.queueExec(1, 0)
+	backend.queueQuery([]string{"id"}, fakeValueRows(int64(3)))
 	require.NoError(t, db.InsertBulk("t", []row{{Name: "a"}}))
-	st, _ = backend.lastStatement("exec")
+	st, _ = backend.lastStatement("query")
 	assert.NotContains(t, st.sql, `"note"`)
 }
 
