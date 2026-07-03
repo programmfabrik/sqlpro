@@ -14,10 +14,9 @@ type city struct {
 }
 
 // bulkExample shows the set-at-a-time write helpers. InsertBulk renders one
-// multi-row INSERT with the values as literals and — when the rows have a
-// single auto-assigned integer pk — reads the generated keys back via
-// RETURNING. On PostgreSQL (inside ExecTX), batches without that read-back
-// use COPY FROM.
+// multi-row INSERT with the values as literals (COPY FROM on PostgreSQL
+// inside ExecTX) and does NOT read the generated keys back;
+// InsertBulkReadbackIdsContext does, at the cost of forgoing COPY.
 func bulkExample(ctx context.Context, db sqlpro.DB) error {
 	err := db.Exec(`CREATE TABLE city(
 		id   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,25 +32,32 @@ func bulkExample(ctx context.Context, db sqlpro.DB) error {
 		{Name: "Munich", Pop: 1500000},
 	}
 
-	// One statement for all rows. The city struct has a single auto-assigned
-	// integer pk ("pk,omitempty") and no row has it pre-set, so the generated
-	// keys are automatically read back into the rows.
+	// One statement for all rows; the generated ids are not read back.
 	if err := db.InsertBulk("city", rows); err != nil {
 		return err
 	}
-	fmt.Printf("bulk-inserted %d cities, ids %d..%d\n", len(rows), rows[0].ID, rows[2].ID)
+	fmt.Printf("bulk-inserted %d cities\n", len(rows))
+
+	// The same, but read the generated keys back into the rows. The city
+	// struct has a single auto-assigned integer pk ("pk,omitempty") and no
+	// row has it pre-set, so this is allowed.
+	more := []*city{
+		{Name: "Cologne", Pop: 1100000},
+		{Name: "Frankfurt", Pop: 770000},
+	}
+	if err := db.InsertBulkReadbackIdsContext(ctx, "city", more); err != nil {
+		return err
+	}
+	fmt.Printf("bulk-inserted with ids: %d, %d\n", more[0].ID, more[1].ID)
 
 	// Skip rows that would violate a unique/primary key instead of erroring.
-	// The key read-back is per row: Berlin conflicts and keeps its zero id,
-	// Cologne is inserted and gets its id.
 	dupes := []*city{
 		{Name: "Berlin", Pop: 9999999}, // already exists -> skipped
-		{Name: "Cologne", Pop: 1100000},
+		{Name: "Stuttgart", Pop: 630000},
 	}
 	if err := db.InsertBulkOnConflictDoNothingContext(ctx, "city", dupes, "name"); err != nil {
 		return err
 	}
-	fmt.Printf("conflict batch: berlin id=%d (skipped), cologne id=%d\n", dupes[0].ID, dupes[1].ID)
 
 	var all []*city
 	if err := db.Query(&all, "SELECT * FROM city"); err != nil {

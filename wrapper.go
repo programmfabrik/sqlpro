@@ -121,18 +121,19 @@ type Exec interface {
 	// the row (in slice mode only into an int64 key).
 	Insert(string, any) error
 	// InsertBulk inserts a slice of structs with one multi-row INSERT
-	// (COPY FROM on postgres inside ExecTX). When the rows have a single
-	// auto-assigned signed-integer primary key ("pk,omitempty", none
-	// pre-set), the generated keys are automatically read back into the
-	// rows.
+	// (COPY FROM on postgres inside ExecTX). Generated primary keys are NOT
+	// read back; use InsertBulkReadbackIdsContext when they are needed.
 	InsertBulk(string, any) error
 	// InsertBulkContext works like InsertBulk with a context.
 	InsertBulkContext(context.Context, string, any) error
 	// InsertBulkOnConflictDoNothingContext works like InsertBulkContext but
-	// adds ON CONFLICT (cols...) DO NOTHING to the statement. The key
-	// read-back is per row: an inserted row gets its generated key, a
-	// conflicted (skipped) row keeps its zero key.
+	// adds ON CONFLICT (cols...) DO NOTHING to the statement.
 	InsertBulkOnConflictDoNothingContext(context.Context, string, any, ...string) error
+	// InsertBulkReadbackIdsContext works like InsertBulkContext but writes the
+	// generated primary keys back into the rows with one INSERT ... RETURNING
+	// (so no COPY). The batch needs a single settable auto-assigned integer
+	// primary key ("pk,omitempty") and no pre-set key.
+	InsertBulkReadbackIdsContext(context.Context, string, any) error
 	// InsertContext works like Insert with a context.
 	InsertContext(context.Context, string, any) error
 

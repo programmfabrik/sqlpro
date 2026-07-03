@@ -149,30 +149,25 @@ single exec. Nothing is chunked: statement-size limits of the database are
 the caller's concern.
 
 ```go
-db.InsertBulk("author", []*Author{{Name: "a"}, {Name: "b"}})     // ids written back
+db.InsertBulk("author", []*Author{{Name: "a"}, {Name: "b"}})     // fast, ids NOT read back
+db.InsertBulkReadbackIdsContext(ctx, "author", rows)             // ids written back into rows
 db.InsertBulkOnConflictDoNothingContext(ctx, "author", rows, "name") // skip conflicts on "name"
 db.UpdateBulkContext(ctx, "author", rows)                            // update many by pk
 ```
 
-Like `Insert`, the bulk inserts write the generated primary keys back into
-the rows — automatically, whenever the batch qualifies: the struct has
-exactly one primary key, a non-pointer signed-integer field tagged
-`pk,omitempty` (the column auto-assigned by the database), and no row has its
-key pre-set. Such a batch runs as one multi-row `INSERT … RETURNING`; the
-returned keys are mapped back by row order, which is correct when the
-statement generated all of them. A batch that does not qualify simply inserts
-without read-back — on PostgreSQL inside `ExecTX` via the faster `COPY FROM`
-(which cannot `RETURNING`; outside `ExecTX` the raw pgx connection needed for
-COPY is not available and the literal `INSERT` is used).
+By default the bulk inserts do **not** read generated primary keys back — on
+PostgreSQL inside `ExecTX` they use the faster `COPY FROM` (outside `ExecTX`
+the raw pgx connection COPY needs is unavailable, so a literal multi-row
+`INSERT` is used). Reading the keys back would forgo COPY, so it is opt-in.
 
-With `ON CONFLICT DO NOTHING` the read-back is per row: an inserted row gets
-its key, a conflicted (skipped) row keeps its zero key — so a non-zero key
-tells you the row was actually inserted. When rows were skipped, the
-generated keys are matched back with one follow-up `SELECT` on the conflict
-columns (or on all inserted columns when no conflict target was given),
-compared by the database itself — so this costs an extra round trip only when
-conflicts actually happened. Rows with identical match values are assigned
-the same key.
+`InsertBulkReadbackIdsContext` writes the generated keys back into the rows,
+like `Insert` does for a single row: it runs one multi-row
+`INSERT … RETURNING` and maps the returned keys back by row order. That
+requires a single settable non-pointer signed-integer primary key tagged
+`pk,omitempty` (auto-assigned by the database), a homogeneous slice, and no
+row with its key pre-set — each is checked and returns an error otherwise.
+The client-side scan of the returned ids is cheap; the only cost over a plain
+`InsertBulk` is losing COPY, which only matters for large batches.
 
 ## NULL, JSON and custom column types
 
