@@ -95,8 +95,8 @@ Tag options (comma-separated after the column name):
 | `readonly` | never written by sqlpro (server-generated/computed columns); still read back |
 | `json` | the field is JSON-marshaled on write and unmarshaled on read |
 | `json_ignore_error` | ignore JSON marshal/unmarshal errors for this field |
-| `null` | for `json` fields: write SQL `NULL` (not the string `"null"`) when the value is zero |
-| `notnull` | for `json` fields: write the literal `"null"` rather than SQL `NULL` |
+| `null` | write SQL `NULL` when the value is zero (for `json` fields: instead of the string `"null"`) |
+| `notnull` | for `json` fields: write the literal `"null"` rather than SQL `NULL`; on plain pointer fields a `nil` value panics instead of writing `NULL` |
 | `-` | ignore the field entirely (never read or written) |
 
 `db:"name"` with no options just maps the column.
@@ -143,18 +143,36 @@ db.Exec("DELETE FROM author WHERE id = ?", 1)
 affected, lastID, err := db.ExecContextRowsAffected(ctx, "UPDATE author SET name = ?", "x")
 ```
 
-Bulk helpers operate on a slice of structs in one round-trip. On PostgreSQL,
-`InsertBulk` uses `COPY FROM` for large batches; on SQLite it builds multi-row
-`INSERT`s (chunked under the placeholder limit):
+Bulk helpers operate on a slice of structs in one round trip: the inserts run
+as a single statement, `UpdateBulkContext` sends one `UPDATE` per row in a
+single exec. Nothing is chunked: statement-size limits of the database are
+the caller's concern.
 
 ```go
-db.InsertBulk("author", []*Author{{Name: "a"}, {Name: "b"}})
+db.InsertBulk("author", []*Author{{Name: "a"}, {Name: "b"}})     // ids written back
 db.InsertBulkOnConflictDoNothingContext(ctx, "author", rows, "name") // skip conflicts on "name"
 db.UpdateBulkContext(ctx, "author", rows)                            // update many by pk
 ```
 
-> Bulk inserts do not read generated keys back into each struct; `SELECT` the
-> rows afterwards if you need their ids.
+Like `Insert`, the bulk inserts write the generated primary keys back into
+the rows — automatically, whenever the batch qualifies: the struct has
+exactly one primary key, a non-pointer signed-integer field tagged
+`pk,omitempty` (the column auto-assigned by the database), and no row has its
+key pre-set. Such a batch runs as one multi-row `INSERT … RETURNING`; the
+returned keys are mapped back by row order, which is correct when the
+statement generated all of them. A batch that does not qualify simply inserts
+without read-back — on PostgreSQL inside `ExecTX` via the faster `COPY FROM`
+(which cannot `RETURNING`; outside `ExecTX` the raw pgx connection needed for
+COPY is not available and the literal `INSERT` is used).
+
+With `ON CONFLICT DO NOTHING` the read-back is per row: an inserted row gets
+its key, a conflicted (skipped) row keeps its zero key — so a non-zero key
+tells you the row was actually inserted. When rows were skipped, the
+generated keys are matched back with one follow-up `SELECT` on the conflict
+columns (or on all inserted columns when no conflict target was given),
+compared by the database itself — so this costs an extra round trip only when
+conflicts actually happened. Rows with identical match values are assigned
+the same key.
 
 ## NULL, JSON and custom column types
 
@@ -192,6 +210,10 @@ PostgreSQL. Special placeholders:
   ```go
   db.Query(&names, "SELECT name FROM author WHERE id IN ?", []int64{1, 2, 3})
   ```
+
+  Slices with more than 100 elements are inlined as escaped literals instead
+  of placeholders; that fallback supports only string and int/int32/int64
+  element types (plus their pointers).
 
 - **`@`** — the next argument is quoted as a SQL **identifier** (table/column):
 
@@ -231,7 +253,7 @@ can be registered on the transaction:
 | `BeforeCommit(func() error)` | inside `Commit`, before the underlying commit; an error rolls back |
 | `AfterCommit(func())` | after a successful commit |
 | `AfterRollback(func())` | after a rollback |
-| `AfterTransaction(func())` | after commit **or** rollback |
+| `AfterTransaction(func())` | after a successful commit **or** rollback |
 
 Use `BeforeCommit` when a side effect must be atomic with the transaction (e.g.
 bumping a cache version); use the `After*` hooks for non-transactional effects
@@ -274,11 +296,13 @@ go run ./examples
 
 ## Testing & benchmarks
 
-Most tests run against SQLite and need no setup:
+Most tests run against SQLite and need no setup. The exception is
+`TestCopyFrom`: it needs a local PostgreSQL with an `apitest` database and
+fails without one:
 
 ```sh
-go test ./...                 # everything except the PostgreSQL test
-go test -run TestCopyFrom .   # needs a local PostgreSQL "apitest" database
+go test ./...                 # SQLite tests + TestCopyFrom (PostgreSQL)
+go test -run TestCopyFrom .   # just the PostgreSQL test
 ```
 
 `feature_test.go` is a from-scratch, feature-by-feature suite covering the full

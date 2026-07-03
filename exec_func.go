@@ -31,8 +31,10 @@ func CtxTX(ctx context.Context) TX {
 	return v.(TX)
 }
 
-// ExecTX runs the given function inside a TX. On Postgres in writable TX, the
-// lock timeout is set to 60s. For Sqlite, the PRAGMA foreign_keys is set on.
+// ExecTX runs the given function inside a TX: commit if it returns nil,
+// rollback otherwise. On postgres a writable TX runs with a lock_timeout of
+// 300s; on sqlite the PRAGMA defer_foreign_keys is switched on (foreign key
+// checks deferred until commit).
 func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, opts *sql.TxOptions) (err error) {
 
 	select {

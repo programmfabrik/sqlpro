@@ -100,7 +100,8 @@ func (db2 *db) BeginRead() (TX, error) {
 	return db2.txBeginContext(context.Background(), nil, &sql.TxOptions{ReadOnly: true})
 }
 
-// Begin starts a new transaction, (read-write mode)
+// BeginContext starts a new transaction; the mode comes from opts
+// (read-write unless opts.ReadOnly is set).
 func (db2 *db) BeginContext(ctx context.Context, opts *sql.TxOptions) (TX, error) {
 	return db2.txBeginContext(ctx, nil, opts)
 }
