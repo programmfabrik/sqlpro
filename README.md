@@ -240,8 +240,9 @@ err := db.ExecTX(ctx, func(ctx context.Context) error {
 }, nil) // *sql.TxOptions, or nil
 ```
 
-Transactions cannot be nested (`ExecTX` inside `ExecTX` errors). Lifecycle hooks
-can be registered on the transaction:
+Transactions cannot be nested (`ExecTX` inside `ExecTX` errors) — except on an
+explicitly adopted leased transaction, see below. Lifecycle hooks can be
+registered on the transaction:
 
 | hook | when |
 | --- | --- |
@@ -256,6 +257,39 @@ bumping a cache version); use the `After*` hooks for non-transactional effects
 
 For explicit control there are also `Begin()`, `BeginRead()` (read-only) and
 `BeginContext()`, each returning a `TX` you `Commit()` / `Rollback()` yourself.
+
+### Leasing a transaction to another goroutine
+
+An open **write** transaction can be handed to another goroutine — e.g. a
+re-entrant HTTP request made by a worker the owning request started and now
+waits for. `Lease()` registers the TX under a crypto-random id (a capability:
+whoever presents it joins the transaction); `AdoptTX` resolves it into a fresh
+context:
+
+```go
+// owner side — inside ExecTX, parked while the id is out:
+tx := sqlpro.CtxTX(ctx)
+id, stop := tx.Lease()
+defer stop()                       // Commit/Rollback also invalidate the lease
+handToWorkerAndWait(id)            // owner MUST NOT use or end the TX meanwhile
+
+// adopter side — a different goroutine, its own context:
+ctx, release, err := sqlpro.AdoptTX(reqCtx, id)
+if err != nil { ... }              // unknown, stopped, or ended lease
+defer release()                    // serializes adopters: next AdoptTX blocks until released
+```
+
+The adopted context carries the owner's TX: plain `CtxTX(ctx)` reads and writes
+see the owner's uncommitted state. An `ExecTX` on an adopted context does NOT
+error — it runs the job inside a `SAVEPOINT` on the owner's transaction:
+released on success, rolled back to on error or panic. That preserves `ExecTX`'s
+contract ("the job's writes are atomic — all gone on error") for code that is
+unaware it runs adopted. Commit ownership always stays with the owner; the
+adopter's surviving writes commit (or roll back) together with the owner's
+transaction.
+
+Nesting stays illegal everywhere else: `ExecTX` on a non-adopted active
+transaction still errors.
 
 ## Introspection
 

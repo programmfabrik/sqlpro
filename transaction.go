@@ -116,6 +116,7 @@ func (db2 *db) Commit() error {
 	if db2.sqlTx == nil {
 		panic("sqlpro.DB.Commit: Unable to call Commit without Transaction.")
 	}
+	db2.leaseEnd()
 
 	if db2.DebugExec || db2.Debug {
 		log.Printf("%s COMMIT sql.DB: %p", db2, db2.sqlDB)
@@ -157,6 +158,7 @@ func (db2 *db) Rollback() error {
 	if db2.sqlTx == nil {
 		panic("sqlpro.DB.Rollback: Unable to call Rollback without Transaction.")
 	}
+	db2.leaseEnd()
 
 	if db2.DebugExec || db2.Debug {
 		log.Printf("%s ROLLBACK", db2)

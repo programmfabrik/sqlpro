@@ -43,7 +43,13 @@ func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, 
 	default:
 	}
 
-	if CtxTX(ctx).ActiveTX() {
+	if tx := CtxTX(ctx); tx.ActiveTX() {
+		// Joining an existing TX is only legal when it was explicitly adopted
+		// (AdoptTX); it then runs as a savepoint and commit stays with the
+		// owner. opts are ignored in that case. Anything else is a bug.
+		if ctxAdopted(ctx) {
+			return execTXSavepoint(ctx, tx.(*db), job)
+		}
 		return errors.New("sqlpro.ExecTX: unable to nest transaction")
 	}
 

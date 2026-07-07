@@ -53,6 +53,9 @@ type db struct {
 	txAfterCommit   []func()
 	txAfterRollback []func()
 
+	leaseIDs   []string // outstanding lease ids of this TX (see Lease)
+	savepointN int      // savepoint counter for adopted ExecTX joins
+
 	txBeginMtx     *sync.Mutex // used to protect write tx begin for SQLITE3
 	txExecQueryMtx *sync.Mutex // used to protect a tx from mutual use during exec or query
 }
@@ -200,6 +203,11 @@ type TX interface {
 	ActiveTX() bool
 	// IsWriteMode reports whether the transaction is read-write.
 	IsWriteMode() bool
+
+	// Lease registers the open write TX under a crypto-random id so another
+	// goroutine can join it via AdoptTX; stop invalidates the id (Commit and
+	// Rollback invalidate all leases of the TX as well).
+	Lease() (id string, stop func())
 
 	// Commit commits the transaction.
 	Commit() error
