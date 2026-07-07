@@ -55,6 +55,12 @@ func (db3 *db) txBeginContext(ctx context.Context, conn *sql.Conn, topts *sql.Tx
 	if wMode && db3.driver == SQLITE3 {
 		_, err = db2.db.ExecContext(ctx, "ROLLBACK; BEGIN IMMEDIATE")
 		if err != nil {
+			// The sql.Tx must be closed here: an open Tx pins the sql.Conn's
+			// closemu, so the caller's deferred conn.Close() would deadlock
+			// forever. The sqlite transaction itself is already gone (the
+			// ROLLBACK above ran), so the driver error of this Rollback is
+			// irrelevant — it only releases the database/sql bookkeeping.
+			_ = db2.sqlTx.Rollback()
 			db2.txBeginMtx.Unlock()
 			return nil, err
 		}
