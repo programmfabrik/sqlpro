@@ -275,18 +275,26 @@ handToWorkerAndWait(id)            // owner MUST NOT use or end the TX meanwhile
 
 // adopter side — a different goroutine, its own context:
 ctx, release, err := sqlpro.AdoptTX(reqCtx, id)
-if err != nil { ... }              // unknown, stopped, or ended lease
+if err != nil { ... }              // unknown, stopped, ended, or failed lease
 defer release()                    // serializes adopters: next AdoptTX blocks until released
 ```
 
 The adopted context carries the owner's TX: plain `CtxTX(ctx)` reads and writes
 see the owner's uncommitted state. An `ExecTX` on an adopted context does NOT
-error — it runs the job inside a `SAVEPOINT` on the owner's transaction:
-released on success, rolled back to on error or panic. That preserves `ExecTX`'s
-contract ("the job's writes are atomic — all gone on error") for code that is
-unaware it runs adopted. Commit ownership always stays with the owner; the
-adopter's surviving writes commit (or roll back) together with the owner's
-transaction.
+error — it runs the job directly on the owner's transaction. **The leased TX
+fails as a unit on adopter error**: when a write-intent join (`opts` nil or not
+`ReadOnly`) returns an error or panics, the transaction is marked failed — the
+owner's `Commit` refuses, rolls back, and returns the adopter's error, so a
+partially applied adopter job can never become durable. A `ReadOnly` join's
+error is only returned and leaves the transaction healthy (probing reads must
+not doom the owner). Commit ownership always stays with the owner.
+
+The lease's stop func, `Commit`, and `Rollback` all wait for an in-flight
+adopter to release before proceeding, so the owner never uses or ends the TX
+concurrently with an adopted request; `sqlpro.CtxAdopted(ctx)` reports whether
+a context runs adopted — for callers that must refuse work which cannot
+complete inside a leased TX (e.g. waiting on effects only visible after the
+owner commits).
 
 Nesting stays illegal everywhere else: `ExecTX` on a non-adopted active
 transaction still errors.

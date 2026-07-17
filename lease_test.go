@@ -2,10 +2,13 @@ package sqlpro
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -29,7 +32,8 @@ func leaseRowCount(t *testing.T, q Query) (n int) {
 }
 
 // An adopter joins the leased TX on a fresh ctx, sees its uncommitted state,
-// and its ExecTX runs as a savepoint whose writes commit with the owner.
+// and its ExecTX runs directly on the owner's TX; its writes commit with the
+// owner.
 func TestLeaseAdoptJoin(t *testing.T) {
 	d := openLeaseTestDB(t)
 
@@ -51,7 +55,7 @@ func TestLeaseAdoptJoin(t *testing.T) {
 		// the adopter sees the owner's uncommitted row
 		assert.Equal(t, 1, leaseRowCount(t, CtxTX(actx)))
 
-		// nested ExecTX joins via savepoint instead of "unable to nest"
+		// nested ExecTX joins the TX instead of "unable to nest"
 		err = d.ExecTX(actx, func(ctx context.Context) error {
 			return CtxTX(ctx).Exec(`INSERT INTO lease_t(x) VALUES (2)`)
 		}, nil)
@@ -65,9 +69,10 @@ func TestLeaseAdoptJoin(t *testing.T) {
 	assert.Equal(t, 2, leaseRowCount(t, d))
 }
 
-// A failing adopter job is rolled back to its savepoint; the owner's TX and
-// writes survive untouched.
-func TestLeaseAdoptSavepointRollback(t *testing.T) {
+// A failing write-intent adopter job fails the whole leased TX: the owner's
+// Commit rolls back and returns the adopter's error — no partial state, not
+// even the owner's own writes, survives.
+func TestLeaseAdoptWriteErrorFailsTX(t *testing.T) {
 	d := openLeaseTestDB(t)
 
 	err := d.ExecTX(context.Background(), func(ctx context.Context) error {
@@ -92,11 +97,111 @@ func TestLeaseAdoptSavepointRollback(t *testing.T) {
 		}, nil)
 		assert.ErrorContains(t, err, "adopter failed")
 
-		// the adopter's write is gone, the owner's remains
-		assert.Equal(t, 1, leaseRowCount(t, CtxTX(actx)))
+		// a further join on the failed TX is refused
+		err = d.ExecTX(actx, func(ctx context.Context) error { return nil }, nil)
+		assert.ErrorContains(t, err, "adopted transaction has failed")
+
+		// the owner's job succeeds — the failure surfaces at commit
+		return nil
+	}, nil)
+	assert.ErrorContains(t, err, "transaction failed by adopted join")
+	assert.ErrorContains(t, err, "adopter failed")
+
+	// nothing committed
+	assert.Equal(t, 0, leaseRowCount(t, d))
+}
+
+// A failing read-only join reports its error but leaves the TX healthy: the
+// owner commits normally.
+func TestLeaseAdoptReadErrorKeepsTX(t *testing.T) {
+	d := openLeaseTestDB(t)
+
+	err := d.ExecTX(context.Background(), func(ctx context.Context) error {
+		tx := CtxTX(ctx)
+		if err := tx.Exec(`INSERT INTO lease_t(x) VALUES (1)`); err != nil {
+			return err
+		}
+		id, stop := tx.Lease()
+		defer stop()
+
+		actx, release, err := AdoptTX(context.Background(), id)
+		if err != nil {
+			return err
+		}
+		defer release()
+
+		err = d.ExecTX(actx, func(ctx context.Context) error {
+			return fmt.Errorf("read probe failed")
+		}, &sql.TxOptions{ReadOnly: true})
+		assert.ErrorContains(t, err, "read probe failed")
 		return nil
 	}, nil)
 	assert.NoError(t, err)
+	assert.Equal(t, 1, leaseRowCount(t, d))
+}
+
+// A panicking write-intent adopter job also fails the leased TX.
+func TestLeaseAdoptPanicFailsTX(t *testing.T) {
+	d := openLeaseTestDB(t)
+
+	err := d.ExecTX(context.Background(), func(ctx context.Context) error {
+		tx := CtxTX(ctx)
+		id, stop := tx.Lease()
+		defer stop()
+
+		actx, release, err := AdoptTX(context.Background(), id)
+		if err != nil {
+			return err
+		}
+		defer release()
+
+		err = d.ExecTX(actx, func(ctx context.Context) error {
+			panic("adopter exploded")
+		}, nil)
+		assert.ErrorContains(t, err, "panic caught")
+		return nil
+	}, nil)
+	assert.ErrorContains(t, err, "transaction failed by adopted join")
+	assert.ErrorContains(t, err, "adopter exploded")
+}
+
+// stop() blocks until an in-flight adopter has released, so the owner never
+// uses or ends the TX concurrently with an adopted request; an adopter
+// arriving after stop is refused.
+func TestLeaseStopWaitsForAdopter(t *testing.T) {
+	d := openLeaseTestDB(t)
+
+	err := d.ExecTX(context.Background(), func(ctx context.Context) error {
+		tx := CtxTX(ctx)
+		id, stop := tx.Lease()
+
+		adopted := make(chan struct{})
+		var done atomic.Bool
+		go func() {
+			actx, release, err := AdoptTX(context.Background(), id)
+			assert.NoError(t, err)
+			close(adopted)
+			// simulate an in-flight adopted request working on the TX
+			assert.NoError(t, d.ExecTX(actx, func(ctx context.Context) error {
+				time.Sleep(150 * time.Millisecond)
+				return CtxTX(ctx).Exec(`INSERT INTO lease_t(x) VALUES (7)`)
+			}, nil))
+			done.Store(true)
+			release()
+		}()
+
+		<-adopted
+		stop() // must block until the adopter released
+		assert.True(t, done.Load(), "stop returned while the adopter was still in flight")
+
+		// after stop, adoption is refused
+		_, _, err := AdoptTX(context.Background(), id)
+		assert.ErrorContains(t, err, "unknown or ended lease")
+		return nil
+	}, nil)
+	assert.NoError(t, err)
+
+	// the adopter's write, finished before stop returned, committed with the owner
 	assert.Equal(t, 1, leaseRowCount(t, d))
 }
 

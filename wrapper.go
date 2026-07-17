@@ -53,8 +53,8 @@ type db struct {
 	txAfterCommit   []func()
 	txAfterRollback []func()
 
-	leaseIDs   []string // outstanding lease ids of this TX (see Lease)
-	savepointN int      // savepoint counter for adopted ExecTX joins
+	leaseIDs []string // outstanding lease ids of this TX (see Lease)
+	txFailed error    // set by a failed adopted write join; Commit refuses and rolls back
 
 	txBeginMtx     *sync.Mutex // used to protect write tx begin for SQLITE3
 	txExecQueryMtx *sync.Mutex // used to protect a tx from mutual use during exec or query

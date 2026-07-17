@@ -118,6 +118,18 @@ func (db2 *db) Commit() error {
 	}
 	db2.leaseEnd()
 
+	// A failed adopted write join may have left partial writes on the TX;
+	// committing would make them durable. Roll back instead and surface the
+	// adopter's error. leaseEnd above has waited for in-flight adopters, so
+	// txFailed is settled here.
+	if db2.txFailed != nil {
+		err := fmt.Errorf("sqlpro.Commit: transaction failed by adopted join, rolled back: %w", db2.txFailed)
+		if rbErr := db2.Rollback(); rbErr != nil {
+			return fmt.Errorf("%w; rollback: %w", err, rbErr)
+		}
+		return err
+	}
+
 	if db2.DebugExec || db2.Debug {
 		log.Printf("%s COMMIT sql.DB: %p", db2, db2.sqlDB)
 	}
