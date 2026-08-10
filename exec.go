@@ -322,6 +322,15 @@ func (db2 *db) copyFrom(ctx context.Context, table string, data *copyFromData) e
 		panic("copyFrom needs pgx connection")
 	}
 
+	// COPY runs on the captured driver connection and so bypasses the
+	// per-connection lock database/sql puts around every other statement.
+	// Take the TX mutex like exec and query do, or a bulk insert can overlap
+	// an adopted goroutine's statement on the same connection.
+	if db2.txExecQueryMtx != nil {
+		db2.txExecQueryMtx.Lock()
+		defer db2.txExecQueryMtx.Unlock()
+	}
+
 	rowsAffected, err := pgxConn.CopyFrom(ctx, pgx.Identifier{table}, data.Columns(), data)
 	if err != nil {
 		return err

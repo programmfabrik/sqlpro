@@ -83,7 +83,15 @@ func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, 
 		return err
 	}
 
-	tx, err := db2.txBeginContext(ctx, conn, opts)
+	// Begin on an uncancellable context. database/sql otherwise rolls the
+	// transaction back from its own awaitDone goroutine the moment ctx is
+	// done, concurrently with this goroutine's use of the same driver
+	// connection — pgx guards PgConn.Close and asyncClose with a plain
+	// unsynchronized status byte and panics "close of closed channel" when
+	// both run. ExecTX owns the whole lifecycle (commit and rollback below),
+	// and the job keeps the cancellable ctx, so a cancelled caller still
+	// aborts the in-flight statement and unwinds into the rollback here.
+	tx, err := db2.txBeginContext(context.WithoutCancel(ctx), conn, opts)
 	if err != nil {
 		return fmt.Errorf("sqlpro.ExecTX: begin: %w", err)
 	}
