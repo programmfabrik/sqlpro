@@ -1,6 +1,7 @@
 package sqlpro
 
 import (
+	"bytes"
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
@@ -295,14 +296,14 @@ func (db2 *db) replaceArgs(sqlS string, args ...any) (string, []any, error) {
 	var (
 		nthArg, lenRunes int
 		newArgs          []any
-		sb               strings.Builder
+		sb               bytes.Buffer
 		runes            []rune
 		currRune         rune
 	)
 
 	// pretty.Println(args)
 
-	sb = strings.Builder{}
+	sb = bytes.Buffer{}
 	nthArg = 0
 
 	runes = []rune(sqlS)
@@ -385,6 +386,24 @@ func (db2 *db) replaceArgs(sqlS string, args ...any) (string, []any, error) {
 			if l == 0 {
 				return "", nil, fmt.Errorf(`sqlpro: replaceArgs: Unable to merge empty slice: "%s"`, sqlS)
 			}
+			// A list that is too long to bind one placeholder per item used to
+			// be inlined as literals. Past ~8.4M items that stops parsing: the
+			// server builds one parse node per item and the node list doubles
+			// into a single allocation above 1 GiB ("invalid memory alloc
+			// request size 1073741824"), see #80845. Behind IN / NOT IN the
+			// whole list can travel as ONE bound argument instead, which has no
+			// such ceiling and keeps the statement text constant. Everywhere
+			// else (VALUES ?, row constructors) the literal list is still the
+			// only thing that fits, so that path is unchanged.
+			if l > db2.MaxPlaceholder {
+				written, err := db2.writeBoundList(&sb, rv, &newArgs)
+				if err != nil {
+					return "", nil, err
+				}
+				if written {
+					continue
+				}
+			}
 			sb.WriteRune('(')
 			fi := &fieldInfo{ptr: rv.Type().Elem().Kind() == reflect.Ptr}
 			for i := 0; i < l; i++ {
@@ -454,8 +473,141 @@ func (db2 *db) replaceArgs(sqlS string, args ...any) (string, []any, error) {
 
 }
 
+// findTrailingIn reports whether the SQL built so far ends in an "IN" (or
+// "NOT IN") keyword, i.e. whether the slice placeholder that follows spells a
+// set membership test. It returns the offset the keyword starts at, so the
+// caller can rewrite it, and whether it was negated.
+func findTrailingIn(b []byte) (start int, negated, ok bool) {
+	end := len(b)
+	for end > 0 && isSQLSpace(b[end-1]) {
+		end--
+	}
+	if end < 2 {
+		return 0, false, false
+	}
+	if !(b[end-2] == 'i' || b[end-2] == 'I') || !(b[end-1] == 'n' || b[end-1] == 'N') {
+		return 0, false, false
+	}
+	// "fin IN ?" must not read as the keyword: what precedes it has to be a
+	// boundary, not the tail of an identifier.
+	inStart := end - 2
+	if inStart > 0 && !isSQLBoundary(b[inStart-1]) {
+		return 0, false, false
+	}
+	// an optional NOT in front of it
+	notEnd := inStart
+	for notEnd > 0 && isSQLSpace(b[notEnd-1]) {
+		notEnd--
+	}
+	if notEnd >= 3 &&
+		(b[notEnd-3] == 'n' || b[notEnd-3] == 'N') &&
+		(b[notEnd-2] == 'o' || b[notEnd-2] == 'O') &&
+		(b[notEnd-1] == 't' || b[notEnd-1] == 'T') &&
+		(notEnd-3 == 0 || isSQLBoundary(b[notEnd-4])) {
+		return notEnd - 3, true, true
+	}
+	return inStart, false, true
+}
+
+func isSQLSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+func isSQLBoundary(c byte) bool {
+	return isSQLSpace(c) || c == '(' || c == ',' || c == ')'
+}
+
+// boundList converts a slice of the types the literal path supports into one
+// value the driver can bind as a whole. Anything else returns ok == false and
+// the caller falls back to inlining literals.
+func boundList(rv reflect.Value) (arg any, ok bool) {
+	l := rv.Len()
+	switch rv.Type().Elem().Kind() {
+	case reflect.String:
+		out := make([]string, l)
+		for i := range out {
+			out[i] = rv.Index(i).String()
+		}
+		return out, true
+	case reflect.Int, reflect.Int32, reflect.Int64:
+		out := make([]int64, l)
+		for i := range out {
+			out[i] = rv.Index(i).Int()
+		}
+		return out, true
+	case reflect.Ptr:
+		switch rv.Type().Elem().Elem().Kind() {
+		case reflect.String:
+			out := make([]*string, l)
+			for i := range out {
+				if item := rv.Index(i); !item.IsNil() {
+					v := item.Elem().String()
+					out[i] = &v
+				}
+			}
+			return out, true
+		case reflect.Int, reflect.Int32, reflect.Int64:
+			out := make([]*int64, l)
+			for i := range out {
+				if item := rv.Index(i); !item.IsNil() {
+					v := item.Elem().Int()
+					out[i] = &v
+				}
+			}
+			return out, true
+		}
+	}
+	return nil, false
+}
+
+// writeBoundList replaces "IN ?" / "NOT IN ?" with a form that carries the
+// whole list as a single bound argument, so the list length no longer shows up
+// in the statement text. It reports whether it wrote anything; if not, the
+// caller inlines the list as literals as before.
+func (db2 *db) writeBoundList(sb *bytes.Buffer, rv reflect.Value, newArgs *[]any) (written bool, err error) {
+	start, negated, ok := findTrailingIn(sb.Bytes())
+	if !ok {
+		return false, nil
+	}
+	arg, ok := boundList(rv)
+	if !ok {
+		return false, nil
+	}
+
+	switch db2.driver {
+	case POSTGRES:
+		// postgres reads "x IN (a,b,c)" as "x = ANY(ARRAY[a,b,c])" anyway —
+		// same plan, same estimate — so binding the array outright changes
+		// nothing but the size of the statement.
+		sb.Truncate(start)
+		*newArgs = append(*newArgs, arg)
+		if negated {
+			sb.WriteString("<> ALL(")
+		} else {
+			sb.WriteString("= ANY(")
+		}
+		db2.appendPlaceholder(sb, len(*newArgs)-1)
+		sb.WriteRune(')')
+		return true, nil
+	case SQLITE3:
+		// sqlite has no array type and the same ceiling on a literal list
+		// ("out of memory" while parsing); a JSON array read back by json_each
+		// is the one form that takes the list as a single value.
+		jsonB, err := json.Marshal(arg)
+		if err != nil {
+			return false, fmt.Errorf("sqlpro: replaceArgs: unable to encode IN list: %w", err)
+		}
+		*newArgs = append(*newArgs, string(jsonB))
+		sb.WriteString("(SELECT \"value\" FROM json_each(")
+		db2.appendPlaceholder(sb, len(*newArgs)-1)
+		sb.WriteString("))")
+		return true, nil
+	}
+	return false, nil
+}
+
 // appendPlaceholder adds one placeholder to the built
-func (db2 *db) appendPlaceholder(sb *strings.Builder, numArg int) {
+func (db2 *db) appendPlaceholder(sb *bytes.Buffer, numArg int) {
 	switch db2.PlaceholderMode {
 	case QUESTION:
 		sb.WriteRune('?')
@@ -695,10 +847,47 @@ func argsToString(args ...any) string {
 			s = "%v"
 		}
 		rv = reflect.ValueOf(arg)
+		if summary, ok := summarizeSliceArg(rv); ok {
+			// A bound IN list can hold millions of items. Printing it would
+			// put the statement's whole id list back into the log, which is
+			// what binding it got rid of in the first place.
+			sb.WriteString(fmt.Sprintf(" #%d %s %s\n", idx+1, rv.Type(), summary))
+			continue
+		}
 		argPrint = reflect.Indirect(rv).Interface()
 		sb.WriteString(fmt.Sprintf(" #%d %s "+s+"\n", idx+1, rv.Type(), argPrint))
 	}
 	return sb.String()
+}
+
+// maxArgItemsPrinted is how many items of a slice argument argsToString
+// spells out before it summarises the rest.
+const maxArgItemsPrinted = 10
+
+// summarizeSliceArg renders a slice argument as its first items plus a count.
+// It reports false for anything that is not an oversized slice, which is then
+// printed as before. []byte is left alone: it is a value, not a list.
+func summarizeSliceArg(rv reflect.Value) (string, bool) {
+	if !rv.IsValid() || rv.Kind() != reflect.Slice {
+		return "", false
+	}
+	if rv.Type().Elem().Kind() == reflect.Uint8 {
+		return "", false
+	}
+	l := rv.Len()
+	if l <= maxArgItemsPrinted {
+		return "", false
+	}
+	var sb strings.Builder
+	sb.WriteRune('[')
+	for i := 0; i < maxArgItemsPrinted; i++ {
+		if i > 0 {
+			sb.WriteRune(',')
+		}
+		fmt.Fprintf(&sb, "%v", reflect.Indirect(rv.Index(i)))
+	}
+	fmt.Fprintf(&sb, ",... %d items]", l)
+	return sb.String(), true
 }
 
 func (db2 *db) Close() error {

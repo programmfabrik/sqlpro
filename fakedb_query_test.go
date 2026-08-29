@@ -75,9 +75,9 @@ func TestFakeQueryArgErrors(t *testing.T) {
 	assert.Contains(t, err.Error(), "empty slice")
 }
 
-func TestFakeQueryInClauseLiterals(t *testing.T) {
+func TestFakeQueryInClauseBound(t *testing.T) {
 	db, backend := newFakeSqlPro(t, SQLITE3)
-	db.MaxPlaceholder = 1 // force literal inlining for slices longer than 1
+	db.MaxPlaceholder = 1 // force the long-list path for slices longer than 1
 
 	s1 := "a'b"
 	i1, i32a, i64a := 5, int32(6), int64(7)
@@ -95,14 +95,44 @@ func TestFakeQueryInClauseLiterals(t *testing.T) {
 		[]*int64{&i64a, nil},
 	))
 
+	// Behind IN the list travels as one bound JSON array instead of being
+	// inlined, so the statement no longer grows with it (#80845).
 	st, _ := backend.lastStatement("query")
-	assert.Equal(t, "SELECT a WHERE s IN ('a''b','c') AND sp IN ('a''b',null) "+
-		"AND i IN (5,6) AND i32 IN (6,7) AND i64 IN (7,8) AND ip IN (5,null) "+
-		"AND i32p IN (6,null) AND i64p IN (7,null)", st.sql)
+	set := `IN (SELECT "value" FROM json_each(?))`
+	assert.Equal(t, "SELECT a WHERE s "+set+" AND sp "+set+" AND i "+set+
+		" AND i32 "+set+" AND i64 "+set+" AND ip "+set+
+		" AND i32p "+set+" AND i64p "+set, st.sql)
+	assert.Equal(t, []driver.Value{
+		`["a'b","c"]`, `["a'b",null]`,
+		`[5,6]`, `[6,7]`, `[7,8]`,
+		`[5,null]`, `[6,null]`, `[7,null]`,
+	}, st.args)
 
 	err := db.Query(&s, "SELECT a WHERE b IN ?", []bool{true, false})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Unable to add type")
+}
+
+func TestFakeQueryInClauseLiterals(t *testing.T) {
+	db, backend := newFakeSqlPro(t, SQLITE3)
+	db.MaxPlaceholder = 1
+
+	// Outside IN / NOT IN there is nothing to bind the list to, so a long
+	// list is still inlined as literals.
+	s1 := "a'b"
+	i1 := 5
+	backend.queueQuery([]string{"a"}, fakeValueRows("x"))
+	var s string
+	require.NoError(t, db.Query(&s,
+		"SELECT a FROM (VALUES ?, ?, ?) v",
+		[]string{"a'b", "c"},
+		[]*string{&s1, nil},
+		[]*int{&i1, nil},
+	))
+
+	st, _ := backend.lastStatement("query")
+	assert.Equal(t, "SELECT a FROM (VALUES ('a''b','c'), ('a''b',null), (5,null)) v", st.sql)
+	assert.Empty(t, st.args)
 }
 
 func TestFakeQueryTimeArgFormatting(t *testing.T) {
