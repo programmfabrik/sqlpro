@@ -27,8 +27,9 @@ const SQLITE3 = "sqlite3"
 
 type db struct {
 	db                    dbWrappable
-	sqlDB                 *sql.DB // this can be <nil>
-	driverConn            any     // set in txBeginContext by ExecTX
+	sqlDB                 *sql.DB      // this can be <nil>
+	driverConn            any          // set in txBeginContext by ExecTX
+	releaseConn           func() error // set by ExecTX: returns its reserved connection to the pool, once
 	sqlTx                 *sql.Tx
 	Debug                 bool
 	DebugExec             bool

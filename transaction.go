@@ -154,6 +154,7 @@ func (db2 *db) Commit() error {
 
 	err := db2.sqlTx.Commit()
 	db2.sqlTx = nil
+	db2.endConn()
 
 	if err != nil {
 		return err
@@ -185,6 +186,7 @@ func (db2 *db) Rollback() error {
 
 	err := db2.sqlTx.Rollback()
 	db2.sqlTx = nil
+	db2.endConn()
 
 	if err != nil {
 		return err
@@ -195,6 +197,18 @@ func (db2 *db) Rollback() error {
 	}
 
 	return nil
+}
+
+// endConn returns the connection ExecTX reserved for the ended transaction to
+// the pool, before the after-hooks run: a hook that runs a transaction of its
+// own must not hold this connection while it waits for another one. A close
+// error is reported by ExecTX.
+func (db2 *db) endConn() {
+	if db2.releaseConn == nil {
+		return
+	}
+	db2.driverConn = nil
+	db2.releaseConn()
 }
 
 func (db2 *db) ActiveTX() bool {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+	"sync"
 
 	// "github.com/jackc/pgx/v5/stdlib"
 	// "github.com/jackc/pgx/v5/stdlib"
@@ -60,8 +61,11 @@ func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, 
 		return fmt.Errorf("sqlpro.ExecTX: conn: %w", err)
 	}
 
+	// Commit and Rollback hand conn back to the pool before their after-hooks
+	// run (see endConn); this covers the ways out that end neither.
+	releaseConn := sync.OnceValue(conn.Close)
 	defer func() {
-		err2 := conn.Close()
+		err2 := releaseConn()
 		if err2 != nil {
 			err = fmt.Errorf("%w close: %w", err, err2)
 		}
@@ -98,6 +102,7 @@ func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, 
 	// capture the driverConn, so that insertBulk can use the faster copyFrom (POSTGRES only)
 
 	tx.driverConn = driverConn
+	tx.releaseConn = releaseConn
 	// In a writable TX, set some defaults
 	if tx.IsWriteMode() {
 		switch tx.Driver() {

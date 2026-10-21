@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -315,6 +316,47 @@ func TestFakeExecTXJobPanic(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "panic caught: boom")
 	assert.Equal(t, []string{"ROLLBACK"}, backend.recorded("rollback"))
+}
+
+// An after-commit or after-rollback hook may run a transaction of its own:
+// the ended transaction's connection is back in the pool by then. With a pool
+// of one, a hook waiting for a second connection never gets it.
+func TestFakeExecTXHooksRunWithConnReleased(t *testing.T) {
+	for name, jobErr := range map[string]error{
+		"commit":   nil,
+		"rollback": fmt.Errorf("job failed"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			db, backend := newFakeSqlPro(t, POSTGRES)
+			db.sqlDB.SetMaxOpenConns(1)
+
+			var hookErr error
+			done := make(chan error, 1)
+			go func() {
+				done <- db.ExecTX(context.Background(), func(ctx context.Context) error {
+					CtxTX(ctx).AfterTransaction(func() {
+						hookErr = db.ExecTX(ctx, func(ctx context.Context) error {
+							return CtxTX(ctx).Exec("INSERT INTO event")
+						}, nil)
+					})
+					return jobErr
+				}, nil)
+			}()
+
+			select {
+			case err := <-done:
+				if jobErr == nil {
+					require.NoError(t, err)
+				} else {
+					require.ErrorIs(t, err, jobErr)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("the hook waits for a connection its ended transaction still holds")
+			}
+			require.NoError(t, hookErr)
+			assert.Contains(t, backend.recorded("exec"), "INSERT INTO event")
+		})
+	}
 }
 
 func TestFakeExecTXCommitError(t *testing.T) {
