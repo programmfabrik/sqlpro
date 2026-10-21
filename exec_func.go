@@ -3,14 +3,13 @@ package sqlpro
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"os"
 	"runtime/debug"
 	"sync"
 
-	// "github.com/jackc/pgx/v5/stdlib"
-	// "github.com/jackc/pgx/v5/stdlib"
-
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pkg/errors"
 )
 
@@ -40,7 +39,7 @@ func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, 
 
 	select {
 	case <-ctx.Done():
-		return errors.New("sqlpro.ExecTX: context is done, not starting a transaction")
+		return fmt.Errorf("sqlpro.ExecTX: context is done, not starting a transaction: %w", ctx.Err())
 	default:
 	}
 
@@ -56,14 +55,24 @@ func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, 
 		return errors.New("sqlpro.ExecTX: unable to nest transaction")
 	}
 
+	// A cancelled caller gets its cancellation back, whatever the driver made
+	// of it: pgx reports a statement the cancel stopped before sending as
+	// driver.ErrBadConn, and one it interrupted as an i/o timeout.
+	defer func() {
+		if err != nil && ctx.Err() != nil && !errors.Is(err, ctx.Err()) {
+			err = fmt.Errorf("%w: %w", ctx.Err(), err)
+		}
+	}()
+
 	conn, err := db2.sqlDB.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlpro.ExecTX: conn: %w", err)
 	}
 
+	var driverConn any
 	// Commit and Rollback hand conn back to the pool before their after-hooks
 	// run (see endConn); this covers the ways out that end neither.
-	releaseConn := sync.OnceValue(conn.Close)
+	releaseConn := sync.OnceValue(func() error { return putConn(conn, driverConn) })
 	defer func() {
 		err2 := releaseConn()
 		if err2 != nil {
@@ -78,7 +87,6 @@ func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, 
 	// shared anywhere else, it is safe to use the connection outside the Raw
 	// func in our case. Running the code inside the Raw func doesn't work due
 	// to locking which the sql package does.
-	var driverConn any
 	err = conn.Raw(func(driverConn2 any) (err error) {
 		driverConn = driverConn2
 		return nil
@@ -134,6 +142,21 @@ func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, 
 		return rollback(tx, err)
 	}
 	return commit(tx)
+}
+
+// putConn returns the connection ExecTX reserved to the pool, or drops it
+// when pgx has closed it: a cancelled context closes the pgx connection of the
+// statement it interrupts, and database/sql cannot tell (pgx implements no
+// driver.Validator). For a transaction begun on the caller's context
+// database/sql drops the connection on cancel itself, but ExecTX begins on an
+// uncancellable one.
+func putConn(conn *sql.Conn, driverConn any) error {
+	if sc, ok := driverConn.(*stdlib.Conn); ok && sc.Conn().IsClosed() {
+		// ErrBadConn from Raw makes database/sql close the connection
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		return nil
+	}
+	return conn.Close()
 }
 
 func rollback(tx TX, err error) error {

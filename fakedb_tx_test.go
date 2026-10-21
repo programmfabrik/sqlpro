@@ -8,6 +8,7 @@ package sqlpro
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"testing"
 	"time"
@@ -271,6 +272,29 @@ func TestFakeExecTXContextDone(t *testing.T) {
 	err := db.ExecTX(ctx, func(ctx context.Context) error { return nil }, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "context is done")
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+// A job that fails after its caller went away returns the cancellation, also
+// when the driver reported the stopped statement as something else (pgx: a
+// bad connection for a statement it never sent).
+func TestFakeExecTXCancelledJobErrorWrapsCtxErr(t *testing.T) {
+	db, _ := newFakeSqlPro(t, POSTGRES)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := db.ExecTX(ctx, func(ctx context.Context) error {
+		cancel()
+		return fmt.Errorf("statement: %w", driver.ErrBadConn)
+	}, nil)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.ErrorIs(t, err, driver.ErrBadConn)
+
+	// a job failing on a live context keeps its own error
+	err = db.ExecTX(context.Background(), func(ctx context.Context) error {
+		return fmt.Errorf("statement: %w", driver.ErrBadConn)
+	}, nil)
+	assert.NotErrorIs(t, err, context.Canceled)
 }
 
 func TestFakeExecTXNoNesting(t *testing.T) {

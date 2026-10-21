@@ -100,6 +100,32 @@ func TestExecTXCancelKeepsTXUntilJobReturns(t *testing.T) {
 		"rollback must be ExecTX's own, not a leftover of database/sql's ctx rollback")
 }
 
+// A cancelled context closes the pgx connection of the statement it
+// interrupts. ExecTX must drop that connection, not pool it: database/sql
+// cannot tell it is dead and would hand it to the next transaction.
+func TestExecTXCancelDropsClosedConn(t *testing.T) {
+	db := openPG(t)
+	defer db.Close()
+	db.DB().SetMaxOpenConns(1)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(100*time.Millisecond, cancel)
+	err := db.ExecTX(ctx, func(ctx context.Context) error {
+		var n int
+		return CtxTX(ctx).QueryContext(ctx, &n, `SELECT 1 FROM pg_sleep(5)`)
+	}, nil)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, 0, db.DB().Stats().OpenConnections, "the closed connection must not stay in the pool")
+
+	var n int
+	err = db.ExecTX(context.Background(), func(ctx context.Context) error {
+		return CtxTX(ctx).QueryContext(ctx, &n, `SELECT 1`)
+	}, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, n)
+}
+
 // Cancelling in-flight statements must abort the job and roll back, without a
 // concurrent rollback racing the driver connection. Run with -race.
 func TestExecTXCancelInFlightRace(t *testing.T) {
