@@ -5,7 +5,8 @@
 clauses, runs transactions with lifecycle hooks, and provides bulk
 insert/update helpers — while staying out of your way: you always write the SQL.
 
-It supports **PostgreSQL** (via `pgx`) and **SQLite** (via `modernc.org/sqlite`).
+It supports **PostgreSQL** and **CockroachDB** (both via `pgx`) and **SQLite**
+(via `modernc.org/sqlite`).
 
 ```go
 import "github.com/programmfabrik/sqlpro"
@@ -57,8 +58,8 @@ import (
 
 ## Connecting
 
-`Open(driver, dsn)` returns a `DB`. `driver` is `"postgres"`, `"sqlite"` or
-`"sqlite3"`.
+`Open(driver, dsn)` returns a `DB`. `driver` is `"postgres"`, `"cockroach"`,
+`"sqlite"` or `"sqlite3"`.
 
 ```go
 db, err := sqlpro.Open("sqlite", "/tmp/app.db")
@@ -68,7 +69,16 @@ defer db.Close()
 `Open` pings the connection and applies driver-appropriate defaults: PostgreSQL
 uses `$1` placeholders and `RETURNING` for generated keys; SQLite uses `?`
 placeholders and the RFC3339 time format. Everything below works the same on
-both drivers.
+all drivers.
+
+CockroachDB is a driver of its own (`db.Driver() == sqlpro.COCKROACH`). It runs
+on pgx and gets the SQL sqlpro writes for PostgreSQL, but a caller has to tell
+the two apart where locks, DDL or transaction restarts differ. `Open` refuses a
+CockroachDB server opened as `"postgres"` and the other way round. A read-only
+transaction at `sql.LevelRepeatableRead` or above reads at a fixed timestamp
+there (`AS OF SYSTEM TIME '-1ms'`): on several nodes a snapshot that has sent
+rows to the client otherwise fails with a restart error (40001
+`ReadWithinUncertaintyIntervalError`).
 
 `db.DB()` returns the underlying `*sql.DB` if you need something sqlpro does not
 wrap.

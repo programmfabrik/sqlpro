@@ -300,7 +300,7 @@ func newFakeSqlPro(t testing.TB, drv dbDriver) (*db, *fakeBackend) {
 	wrapper.DSN = "fake:" + string(drv)
 
 	switch drv {
-	case POSTGRES:
+	case POSTGRES, COCKROACH:
 		wrapper.PlaceholderMode = DOLLAR
 		wrapper.UseReturningForLastId = true
 		wrapper.SupportsLastInsertId = false

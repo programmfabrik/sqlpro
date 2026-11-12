@@ -575,7 +575,7 @@ func (db2 *db) writeBoundList(sb *bytes.Buffer, rv reflect.Value, newArgs *[]any
 	}
 
 	switch db2.driver {
-	case POSTGRES:
+	case POSTGRES, COCKROACH:
 		// postgres reads "x IN (a,b,c)" as "x = ANY(ARRAY[a,b,c])" anyway —
 		// same plan, same estimate — so binding the array outright changes
 		// nothing but the size of the statement.
@@ -928,6 +928,9 @@ func Open(driverS, dsn string) (DB, error) {
 	case "postgres":
 		driver = POSTGRES
 		driverName = "pgx"
+	case "cockroach":
+		driver = COCKROACH
+		driverName = "pgx"
 	}
 
 	conn, err := sql.Open(driverName, dsn)
@@ -953,16 +956,40 @@ func Open(driverS, dsn string) (DB, error) {
 	wrapper.DSN = dsn
 
 	switch driver {
-	case POSTGRES:
+	case POSTGRES, COCKROACH:
 		wrapper.PlaceholderMode = DOLLAR
 		wrapper.UseReturningForLastId = true
 		wrapper.SupportsLastInsertId = false
+
+		version, err := wrapper.Version()
+		if err == nil {
+			err = checkServer(driver, version)
+		}
+		if err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("sqlpro.Open: %w", err)
+		}
 	case SQLITE3:
 		wrapper.timeFormat = time.RFC3339Nano
 	default:
 		return nil, errors.Errorf("sqlpro.Open: Unsupported driver '%s'.", driver)
 	}
 	return wrapper, nil
+}
+
+// checkServer refuses a server opened with the other pgx driver: version is
+// what the server answers to SELECT version(). POSTGRES and COCKROACH connect
+// to either, and a caller that locks or retries by Driver() would do the
+// wrong thing on the other one without an error.
+func checkServer(driver dbDriver, version string) error {
+	isCockroach := strings.HasPrefix(version, "CockroachDB")
+	switch {
+	case driver == POSTGRES && isCockroach:
+		return fmt.Errorf(`the server is CockroachDB, open it with driver %q`, COCKROACH)
+	case driver == COCKROACH && !isCockroach:
+		return fmt.Errorf(`the server is not CockroachDB (%s), open it with driver %q`, version, POSTGRES)
+	}
+	return nil
 }
 
 // Open -> handle
@@ -979,7 +1006,7 @@ func IlikeSql(driver dbDriver, match string) string {
 	switch driver {
 	default:
 		panic(fmt.Errorf("unsupported driver %q", driver))
-	case POSTGRES:
+	case POSTGRES, COCKROACH:
 		return `ILIKE ` + v
 	case SQLITE3:
 		return `LIKE ` + v + ` COLLATE NOCASE`

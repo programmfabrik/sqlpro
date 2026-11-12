@@ -32,9 +32,9 @@ func CtxTX(ctx context.Context) TX {
 }
 
 // ExecTX runs the given function inside a TX: commit if it returns nil,
-// rollback otherwise. On postgres a writable TX runs with a lock_timeout of
-// 300s; on sqlite the PRAGMA defer_foreign_keys is switched on (foreign key
-// checks deferred until commit).
+// rollback otherwise. On postgres and CockroachDB a writable TX runs with a
+// lock_timeout of 300s; on sqlite the PRAGMA defer_foreign_keys is switched
+// on (foreign key checks deferred until commit).
 func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, opts *sql.TxOptions) (err error) {
 
 	select {
@@ -107,14 +107,14 @@ func (db2 *db) ExecTX(ctx context.Context, job func(ctx context.Context) error, 
 	if err != nil {
 		return fmt.Errorf("sqlpro.ExecTX: begin: %w", err)
 	}
-	// capture the driverConn, so that insertBulk can use the faster copyFrom (POSTGRES only)
+	// capture the driverConn, so that insertBulk can use the faster copyFrom (pgx only)
 
 	tx.driverConn = driverConn
 	tx.releaseConn = releaseConn
 	// In a writable TX, set some defaults
 	if tx.IsWriteMode() {
 		switch tx.Driver() {
-		case POSTGRES:
+		case POSTGRES, COCKROACH:
 			err = tx.ExecContext(ctx, `SET LOCAL lock_timeout = '300s'`)
 			if err != nil {
 				return rollback(tx, fmt.Errorf("sqlpro.ExecTX: %w", err))
