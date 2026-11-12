@@ -67,6 +67,21 @@ func (db3 *db) txBeginContext(ctx context.Context, conn *sql.Conn, topts *sql.Tx
 		db2.txBeginMtx.Unlock()
 	}
 
+	// CockroachDB: a read-only snapshot reads at a fixed timestamp. On several
+	// nodes a snapshot restarts when it meets a row that another node wrote
+	// within the clock uncertainty after it began; once rows went to the
+	// client the server cannot do that by itself and the caller gets 40001
+	// ReadWithinUncertaintyIntervalError. A read at a fixed timestamp has no
+	// uncertainty. It can miss a commit acknowledged just before it began, on
+	// a node whose clock runs ahead.
+	if db3.driver == COCKROACH && !wMode && topts.Isolation >= sql.LevelRepeatableRead {
+		_, err = db2.sqlTx.ExecContext(ctx, `SET TRANSACTION AS OF SYSTEM TIME '-1ms'`)
+		if err != nil {
+			_ = db2.sqlTx.Rollback()
+			return nil, fmt.Errorf("sqlpro: unable to set the snapshot time: %w", err)
+		}
+	}
+
 	// debug.PrintStack()
 
 	// pflib.Pln("[%p] BEGIN #%d %s", db.sqlDB, db2.transID, aurora.Blue(fmt.Sprintf("%p", db2.sqlTx)))
@@ -79,7 +94,9 @@ func (db3 *db) txBeginContext(ctx context.Context, conn *sql.Conn, topts *sql.Tx
 }
 
 func (db2 *db) pgxConn() *pgx.Conn {
-	if db2.driver != POSTGRES {
+	switch db2.driver {
+	case POSTGRES, COCKROACH:
+	default:
 		return nil
 	}
 	if db2.driverConn == nil {

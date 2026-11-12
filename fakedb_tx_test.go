@@ -52,6 +52,71 @@ func TestFakeBeginContextReadOnly(t *testing.T) {
 	require.NoError(t, tx.Rollback())
 }
 
+// A read-only snapshot on CockroachDB is pinned to a fixed timestamp; no
+// other transaction is, nor is a snapshot on postgres.
+func TestFakeBeginCockroachSnapshotRead(t *testing.T) {
+	const aost = `SET TRANSACTION AS OF SYSTEM TIME '-1ms'`
+	for _, tc := range []struct {
+		name string
+		drv  dbDriver
+		opts *sql.TxOptions
+		exp  []string
+	}{
+		{"cockroach snapshot read", COCKROACH, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, []string{aost}},
+		{"cockroach serializable read", COCKROACH, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelSerializable}, []string{aost}},
+		{"cockroach read", COCKROACH, &sql.TxOptions{ReadOnly: true}, nil},
+		{"cockroach snapshot write", COCKROACH, &sql.TxOptions{Isolation: sql.LevelRepeatableRead}, nil},
+		{"cockroach write", COCKROACH, nil, nil},
+		{"postgres snapshot read", POSTGRES, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, backend := newFakeSqlPro(t, tc.drv)
+			tx, err := db.BeginContext(context.Background(), tc.opts)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, tc.exp, backend.recorded("exec"))
+			require.NoError(t, tx.Rollback())
+		})
+	}
+}
+
+func TestFakeBeginCockroachSnapshotReadError(t *testing.T) {
+	db, backend := newFakeSqlPro(t, COCKROACH)
+
+	backend.queueExecErr(fmt.Errorf("no timestamp"))
+	_, err := db.BeginContext(context.Background(), &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no timestamp")
+	assert.Equal(t, []string{"ROLLBACK"}, backend.recorded("rollback"), "the transaction is closed")
+}
+
+// CockroachDB runs on pgx like postgres: a writable ExecTX sets the lock
+// timeout there too.
+func TestFakeExecTXCockroachSetup(t *testing.T) {
+	db, backend := newFakeSqlPro(t, COCKROACH)
+
+	err := db.ExecTX(context.Background(), func(ctx context.Context) error {
+		return nil
+	}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{`SET LOCAL lock_timeout = '300s'`}, backend.recorded("exec"))
+}
+
+func TestCheckServer(t *testing.T) {
+	const pg = "PostgreSQL 18.3 on aarch64-apple-darwin"
+	const crdb = "CockroachDB CCL v26.3.5 (x86_64-pc-linux-gnu)"
+
+	require.NoError(t, checkServer(POSTGRES, pg))
+	require.NoError(t, checkServer(COCKROACH, crdb))
+
+	err := checkServer(POSTGRES, crdb)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `"cockroach"`)
+
+	err = checkServer(COCKROACH, pg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `"postgres"`)
+}
+
 func TestFakeBeginErrors(t *testing.T) {
 	db, backend := newFakeSqlPro(t, SQLITE3)
 

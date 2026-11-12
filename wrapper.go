@@ -24,6 +24,11 @@ type dbDriver string
 const POSTGRES = "postgres"
 const SQLITE3 = "sqlite3"
 
+// COCKROACH is CockroachDB. It runs on pgx and takes the SQL sqlpro writes
+// for POSTGRES. It is a driver of its own because its locks, its DDL and its
+// transaction restarts differ: a caller has to be able to tell the two apart.
+const COCKROACH = "cockroach"
+
 type db struct {
 	db                    dbWrappable
 	sqlDB                 *sql.DB      // this can be <nil>
@@ -257,7 +262,7 @@ func escValue(s string) string {
 func (db2 *db) Version() (version string, err error) {
 	var selVersion, prefix string
 	switch db2.driver {
-	case POSTGRES:
+	case POSTGRES, COCKROACH:
 		selVersion = "SELECT version()"
 	case SQLITE3:
 		selVersion = "SELECT sqlite_version()"
@@ -278,7 +283,7 @@ func (db2 *db) Version() (version string, err error) {
 func (db2 *db) Name() (name string, err error) {
 	var selVersion string
 	switch db2.driver {
-	case POSTGRES:
+	case POSTGRES, COCKROACH:
 		selVersion = "SELECT current_database()"
 
 	case SQLITE3:
