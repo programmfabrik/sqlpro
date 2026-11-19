@@ -333,12 +333,20 @@ func scanStructSlice(target reflect.Value, structType reflect.Type, elemIsPtr bo
 	plan := buildColPlan(cols, getStructInfo(structType))
 	data := make([]any, len(cols))
 
-	// chunk of structs handed out one-by-one for []*T targets: one allocation
-	// per chunkSize rows instead of one reflect.New per row.
-	const chunkSize = 64
-	var chunk reflect.Value
-	chunkNext := chunkSize // force initial allocation
-	var structSliceType reflect.Type
+	// []*T targets take their structs from a chunk, one allocation for many
+	// rows instead of a reflect.New per row. The chunk starts at one struct and
+	// grows with the rows scanned so far, up to maxChunk: a result of one row
+	// allocates one struct, and no more structs go unused than rows were
+	// scanned. A chunk of 64 from the first row on made every load by id
+	// allocate 64 structs.
+	const maxChunk = 64
+	var (
+		chunk           reflect.Value
+		chunkLen        int
+		chunkNext       int
+		scanned         int
+		structSliceType reflect.Type
+	)
 	if elemIsPtr {
 		structSliceType = reflect.SliceOf(structType)
 	}
@@ -353,12 +361,14 @@ func scanStructSlice(target reflect.Value, structType reflect.Type, elemIsPtr bo
 
 		structV := elemV
 		if elemIsPtr {
-			if chunkNext == chunkSize {
-				chunk = reflect.MakeSlice(structSliceType, chunkSize, chunkSize)
+			if chunkNext == chunkLen {
+				chunkLen = min(max(scanned, 1), maxChunk)
+				chunk = reflect.MakeSlice(structSliceType, chunkLen, chunkLen)
 				chunkNext = 0
 			}
 			structV = chunk.Index(chunkNext)
 			chunkNext++
+			scanned++
 			elemV.Set(structV.Addr())
 		}
 
