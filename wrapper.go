@@ -16,7 +16,6 @@ import (
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/tw"
-	"github.com/yudai/pp"
 )
 
 type dbDriver string
@@ -393,8 +392,8 @@ func (db2 *db) PrintQueryContext(ctx context.Context, query string, args ...any)
 	start := time.Now()
 	rows, err = db2.db.QueryContext(ctx, query0, newArgs...)
 	if err != nil {
-		pp.Println(query0)
-		pp.Println(newArgs)
+		fmt.Println(query0)
+		fmt.Printf("%#v\n", newArgs)
 		return db2.sqlError(err, query0, newArgs)
 	}
 	cols, _ := rows.Columns()
